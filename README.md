@@ -40,6 +40,7 @@ AEM's supported extension points can't do this today. App Builder extensions for
   | 🔴 Red | score < 80 |
 
 - **Notes on hover.** Hover a badge to read `xdm:brandScoreNotes`. The tooltip opens below and to the left of the cursor, clear of the scrollbar and the window's edge, and flips above when there isn't room below.
+- **Sort by › Brand score.** This adds a **Brand score** entry to the Assets view's own **Sort by** menu, which opens a ranked view of the whole folder. See [Ranked view](#ranked-view-sort-by--brand-score).
 - **Works in any folder.** Assets without a score, such as InDesign files, JSON or logs, simply get no badge.
 - **Stays out of the way.** The badge sits at the bottom right of the thumbnail, so it doesn't cover the Content Credentials (`cr`) icon at the bottom left. Clicking a badge doesn't open the asset.
 - **Fast.**
@@ -85,6 +86,29 @@ There's nothing to do. Browse folders as usual and the badges appear on their ow
 - **Revisiting a folder:** badges appear immediately from the saved scores, then update in place if anything changed.
 - **Changing folders:** badges load for the new folder automatically.
 
+### Ranked view (Sort by › Brand score)
+
+Open the **Sort by** menu above the grid and choose **Brand score**. That opens a ranked view of every asset in the folder, including ones you haven't scrolled to yet. The entry only appears in folders that contain at least one asset with an `xdm:score`.
+
+- **Summary:** how many assets are scored, plus the average, median and range.
+- **Band filters:** **All**, **Green**, **Amber** or **Red**, each with a count. Ranks re-number within the filter.
+- **Order:** **Highest first** or **Lowest first**. Your choice is remembered.
+- **One tile per asset:** rank, thumbnail, score badge, file name and the full brand-score notes (**More** expands long notes).
+- **Click a thumbnail or name** to open that asset's Details page.
+- **Close** with **Esc**, the ✕, or a click outside the panel.
+
+Why it's a view rather than a re-sort of the grid:
+- The Assets view can only ask AEM to sort by name, size, modified or created date.
+- The grid only keeps the cards on screen and positions them itself.
+
+So the extension draws the ranking itself, which also makes it unlikely to break on Assets view updates. The real sort options in the menu are left untouched.
+
+The Assets view grid lazy-loads its images, so most assets in a folder have no thumbnail on the page yet. The ranked view gets its thumbnails in this order:
+
+1. **The grid's own image**, if the card has been drawn.
+2. **The same rendition the Assets view loads:** `<asset path>/jcr:content/renditions/cq5dam.thumbnail.319.319.png`, using the exact link from the folder listing. The extension fetches it for tiles on or near the screen, four at a time, and draws it on a canvas so the page's image security policy can't block it.
+3. **Fallbacks,** if that fails: the Assets API rendition, then the web-optimized image.
+
 ### Options
 
 Click the blue ribbon in the toolbar, or right-click it and choose **Options**.
@@ -126,6 +150,7 @@ There are three small scripts and no build step.
 |---|---|---|
 | `src/page-hook.js` | The page's own JavaScript world | Wraps `fetch`/`XMLHttpRequest`. When the app calls the AEM author host, it notes the IMS `Authorization` bearer token and `x-api-key`, and picks up any `xdm:score` values already in the responses. It posts them only to its own window. |
 | `src/content.js` | The extension's isolated world, in every frame | Finds asset cards, draws the badges, shows the tooltip, and watches the grid for changes. |
+| `src/ranked.js` | The extension's isolated world, loaded before `content.js` | Adds **Brand score** to the Sort by menu and draws the ranked view. |
 | `src/background.js` | Service worker | The data layer. It stores the token, calls the AEM Assets API, caches results and retries failures. |
 
 ### Finding cards
@@ -136,12 +161,16 @@ The badge is attached to the thumbnail's container inside a **closed shadow root
 
 ### Fetching scores
 
-1. **Bulk:** `POST /adobe/experimental/aemmcpserver-expires-20991231/search-assets`, filtered to the current folder (`repositoryMetadata.repo:ancestors`). It asks only for name and score, 50 per page, so a 90-asset folder takes 2 requests and about 16 KB.
-2. **Fallback**, if bulk search is rejected:
+1. **Bulk:** `GET /adobe/repository/<folder path>?embed=http://ns.adobe.com/adobecloud/rel/metadata/asset&limit=100`. This is the same folder listing the Assets view itself uses. It returns every direct child with its asset metadata embedded (score, notes, path) plus links to its renditions. A 90-asset folder is one request: about 1.4 MB, roughly 0.4 s.
+2. **Fallback**, if the listing is rejected:
    - `GET /adobe/folders?path=…` lists the folder's asset IDs and names.
    - `GET /adobe/assets/{id}/metadata` then fetches scores only for the cards actually on screen, six at a time.
    - The rejection is remembered for 30 minutes, so the extension doesn't keep retrying it.
-3. **Notes** are fetched only when you hover a badge, then cached.
+3. **Notes** arrive with the scores, so hover tooltips appear instantly. In fallback mode they're fetched on first hover.
+4. **Ranked view:**
+   - It's usually answered straight from the cache filled by the folder load, with no extra request.
+   - Subfolder assets are filtered out, so the ranking matches what the grid shows.
+   - In fallback mode, it fetches per-asset metadata for anything still missing.
 
 Per-card requests wait until the folder-level request finishes, so the same asset is never fetched twice on the first load.
 
@@ -184,8 +213,10 @@ Open DevTools (⌥⌘I / Ctrl+Shift+I) → **Console**. All messages start with 
 | No badges for a few seconds after opening a tab | Waiting for the app's first API call, to borrow its token | Wait. Later visits are instant. |
 | No badges after installing or updating | Tabs opened before the install don't have the scripts | Refresh the tab. |
 | `No AEM token captured yet` | The app hasn't called AEM in this tab yet | Refresh the tab. |
-| `bulk search unavailable` | Your environment rejects the bulk search endpoint | Nothing to do. The per-asset fallback is slower but works. |
+| `folder listing unavailable` | Your environment rejects the Repository API folder listing | Nothing to do. The per-asset fallback is slower but works. |
 | `No asset cards matched` | Normal in frames without a grid. If badges never appear anywhere, the Assets UI markup changed. | Inspect a card and update `SELECTORS` in `src/content.js`. |
+| No **Brand score** in the Sort by menu, in a folder you know has scores | Scores for the folder haven't loaded yet (first visit) | Wait for the badges to appear, then reopen the menu. |
+| No **Brand score** in the Sort by menu, and no folder ever shows it | The menu's markup differs from what the extension expects: a `role="menu"`/`listbox` with Name, Size, Modified and Created items | Inspect the open menu and adjust `SORT_LABELS` / `ITEM_SELECTOR` in `src/ranked.js`. |
 | Some cards have no badge | Those assets have no `xdm:score` | Check the asset's Details panel. |
 | Old scores showing | Cached data is shown first, then refreshed | Wait a moment, or navigate away and back. |
 
@@ -193,13 +224,13 @@ Open DevTools (⌥⌘I / Ctrl+Shift+I) → **Console**. All messages start with 
 
 No build step, no dependencies. Edit the files, then click ⟳ on the extension in `chrome://extensions`.
 
-**Unit tests** for the data layer run on Node 18+ with mocked `chrome.*` and `fetch`. They cover bulk search, the persistent cache across worker restarts, stale-while-revalidate, the fallback path, token refresh after a `401`, `5xx` retries and host validation.
+**Unit tests** for the data layer run on Node 18+ with mocked `chrome.*` and `fetch`. They cover the bulk folder listing, the persistent cache across worker restarts, stale-while-revalidate, the fallback path, token refresh after a `401`, `5xx` retries, ranked-view data, thumbnails, opening Details pages and host validation.
 
 ```bash
 node tests/background.test.js
 ```
 
-**Visual harness** for the badges and tooltip. It's a mock Assets grid with stubbed extension APIs, including buttons to simulate card recycling and name-only cards.
+**Visual harness** for the badges, tooltip, Sort by entry and ranked view. It's a mock Assets grid with stubbed extension APIs and a mock Sort by menu, plus buttons to simulate card recycling and name-only cards. Add `?datathumbs` to the URL to test the thumbnail fallback.
 
 ```bash
 python3 -m http.server 8765
@@ -215,6 +246,7 @@ grid-brand-score/
 ├── src/
 │   ├── page-hook.js       # page world: token + response observer
 │   ├── content.js         # badges, tooltip, card discovery
+│   ├── ranked.js          # Sort by › Brand score + ranked view
 │   └── background.js      # API calls, cache, retries
 ├── options.html / .js     # settings page
 ├── icons/                 # toolbar icon (icon.svg is the source)
@@ -228,6 +260,6 @@ grid-brand-score/
 
 - **Unofficial.** This is a personal productivity and demo tool. It isn't an Adobe product, and Adobe doesn't support it.
 - **It depends on the Assets view's markup and network calls,** so a UI release can break it until `SELECTORS` is updated. The extension fails silently, showing no badges rather than errors.
-- **The bulk search endpoint is marked experimental** and may change or be withdrawn; the per-asset fallback covers that case.
+- **The bulk listing is the Assets view's own Repository API call**, not a documented public contract, so it can change with an Assets release. The per-asset fallback covers that case.
 - **Chrome only,** and only for the Assets view, not the classic Touch UI.
-- **Bulk search covers the folder and its subfolders, up to 500 assets.** In larger folders, cards outside that set are filled in per asset as you scroll to them.
+- **The bulk listing reads up to 1,000 items per folder** (10 pages of 100). In larger folders, cards beyond that are filled in per asset as you scroll to them.

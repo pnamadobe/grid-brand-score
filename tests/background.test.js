@@ -6,6 +6,7 @@ const assert = require('assert');
 
 const HOST = 'https://author-p12345-e67890.adobeaemcloud.com';
 const TAB_URL = `https://experience.adobe.com/?repoId=author-p12345-e67890.adobeaemcloud.com#/@yourorg/assets/browse/content/dam/campaigns/spring/output`;
+const FOLDER = '/content/dam/campaigns/spring/output';
 const SRC = fs.readFileSync(path.join(__dirname, '../src/background.js'), 'utf8');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -27,11 +28,11 @@ function makeEnv({ disk = { local: {}, session: {} }, server = {} } = {}) {
   let listener;
   const calls = [];
   const pushed = [];
-  const opts = { searchStatus: 200, tokens: ['Bearer TOKEN'], fail503: 0, ...server };
+  const opts = { repoStatus: 0, tokens: ['Bearer TOKEN'], fail503: 0, ...server };
   const chrome = {
     runtime: { id: 'ext', onMessage: { addListener: (fn) => { listener = fn; } }, openOptionsPage() {} },
     storage: { session: storageArea(disk.session), local: storageArea(disk.local) },
-    tabs: { sendMessage: async (tabId, msg) => { pushed.push(msg); } },
+    tabs: { sendMessage: async (tabId, msg) => { pushed.push(msg); }, update: async (tabId, p) => { pushed.push({ type: 'tabUpdate', url: p.url }); } },
     action: { onClicked: { addListener() {} } },
   };
   async function fetch(url, init) {
@@ -41,20 +42,42 @@ function makeEnv({ disk = { local: {}, session: {} }, server = {} } = {}) {
     const fail = (status) => ({ ok: false, status, json: async () => ({}) });
     if (!opts.tokens.includes(init.headers.Authorization)) return fail(401);
     if (opts.fail503 > 0) { opts.fail503--; return fail(503); }
-    if (url.includes('/search-assets')) {
-      if (opts.searchStatus !== 200) return fail(opts.searchStatus);
-      assert.strictEqual(init.headers['X-Adobe-Accept-Experimental'], '1');
-      const body = JSON.parse(init.body);
-      assert.strictEqual(body.termFilters[0].value, '/content/dam/campaigns/spring/output');
-      const start = body.cursor ? 50 : 0;
-      return ok({
-        results: ASSETS.slice(start, start + 50).map((a) => ({ assetId: a.id, repositoryMetadata: { 'repo:name': a.name },
-          assetMetadata: a.score == null ? {} : { 'xdm:score': a.score } })),
-        cursor: start + 50 < ASSETS.length ? 'next' : undefined,
-      });
+    // Repository API folder listing (what the Assets view uses), metadata embedded, 50 per page.
+    if (url.includes('/adobe/repository/content/dam/campaigns/spring/output?')) {
+      if (opts.repoStatus) return fail(opts.repoStatus);
+      const q = new URL(url).searchParams;
+      assert.strictEqual(q.get('embed'), 'http://ns.adobe.com/adobecloud/rel/metadata/asset');
+      const start = q.get('start') ? 50 : 0;
+      const META = 'http://ns.adobe.com/adobecloud/rel/metadata/asset';
+      const children = ASSETS.slice(start, start + 50).map((a) => ({
+        'repo:assetId': a.id, 'repo:name': a.name, 'repo:path': `${FOLDER}/${a.name}`, 'repo:assetClass': 'file',
+        _links: { 'http://ns.adobe.com/adobecloud/rel/rendition': [
+          { href: `${HOST}${FOLDER}/${a.name}/jcr%3Acontent/renditions/cq5dam.thumbnail.48.48.png?cacheinfo=x` },
+          { href: `${HOST}${FOLDER}/${a.name}/jcr%3Acontent/renditions/cq5dam.thumbnail.319.319.png?cacheinfo=abc` },
+        ] },
+        _embedded: { [META]: { ...(a.score == null ? {} : { 'xdm:score': Number(a.score) }), 'xdm:brandScoreNotes': `bulk notes ${a.name}` } },
+      }));
+      if (!start) children.unshift({ 'repo:assetId': 'urn:aaid:aem:folder', 'repo:name': 'sub', 'repo:assetClass': 'directory' });
+      return ok({ children, _page: start + 50 < ASSETS.length ? { next: 'b-asset-50' } : {} });
+    }
+    if (url.includes('/jcr%3Acontent/renditions/cq5dam.thumbnail.319.319.png')) {
+      return { ok: true, status: 200, headers: { get: () => 'image/png' }, arrayBuffer: async () => new Uint8Array([7, 7, 7]).buffer };
     }
     if (url.includes('/adobe/folders?')) {
       return ok({ children: ASSETS.map((a) => ({ type: 'ASSET', assetId: a.id, name: a.name })) });
+    }
+    // Live AEM answers a bare "image/*" Accept with 406 Not Acceptable.
+    if (init.headers.Accept === 'image/*') return fail(406);
+    if (url.includes('/renditions/cq5dam.thumbnail.319.319.png/')) {
+      if (opts.noRendition) return fail(404);
+      return { ok: true, status: 200, headers: { get: () => 'image/png' }, arrayBuffer: async () => new Uint8Array([137, 80, 78, 71]).buffer };
+    }
+    if (url.includes('/as/learned.webp?width=320')) {
+      assert.ok(url.includes(encodeURIComponent(ASSETS[2].id)), 'learned pattern filled with the requested id');
+      return { ok: true, status: 200, headers: { get: () => 'image/webp' }, arrayBuffer: async () => new Uint8Array([9, 9]).buffer };
+    }
+    if (/\/adobe\/assets\/[^/]+$/.test(url)) {
+      return { ok: true, status: 200, headers: { get: () => 'image/avif' }, arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer };
     }
     const m = url.match(/\/adobe\/assets\/([^/]+)\/metadata/);
     if (m) {
@@ -64,7 +87,7 @@ function makeEnv({ disk = { local: {}, session: {} }, server = {} } = {}) {
     }
     throw new Error('unexpected ' + url);
   }
-  const ctx = { chrome, fetch, console: { warn() {}, debug() {}, log: console.log }, setTimeout, clearTimeout, structuredClone, URL, URLSearchParams };
+  const ctx = { chrome, fetch, console: { warn() {}, debug() {}, log: console.log }, setTimeout, clearTimeout, structuredClone, URL, URLSearchParams, btoa };
   vm.createContext(ctx);
   vm.runInContext(SRC, ctx);
   const send = (msg) => new Promise((resolve) => listener(msg, { id: 'ext', tab: { id: 1, url: TAB_URL } }, resolve));
@@ -73,7 +96,7 @@ function makeEnv({ disk = { local: {}, session: {} }, server = {} } = {}) {
 }
 
 (async () => {
-  // 1. Bulk search, then instant cached answers after a service-worker restart.
+  // 1. Bulk folder listing, then instant cached answers after a service-worker restart.
   {
     const a = makeEnv();
     await a.auth();
@@ -82,7 +105,7 @@ function makeEnv({ disk = { local: {}, session: {} }, server = {} } = {}) {
     assert.strictEqual(r.items.length, 60);
     assert.strictEqual(r.items[1].score, 71);
     assert.strictEqual(r.items[0].score, null);
-    assert.strictEqual(a.calls.length, 2, 'two search pages');
+    assert.strictEqual(a.calls.length, 2, 'two listing pages');
     await sleep(700); // let the debounced cache flush hit storage.local
 
     const b = makeEnv({ disk: a.disk }); // "restarted" worker, same storage
@@ -90,7 +113,7 @@ function makeEnv({ disk = { local: {}, session: {} }, server = {} } = {}) {
     assert.ok(r2.cached, 'served from persistent cache');
     assert.strictEqual(r2.items[1].score, 71);
     assert.strictEqual(b.calls.length, 0, 'no network while fresh');
-    console.log('ok bulk search + persistent cache');
+    console.log('ok bulk listing + persistent cache');
   }
 
   // 2. Stale cache: served immediately, refreshed in background and pushed to the tab.
@@ -112,7 +135,7 @@ function makeEnv({ disk = { local: {}, session: {} }, server = {} } = {}) {
 
   // 3. Search rejected: falls back, and the failure is remembered.
   {
-    const a = makeEnv({ server: { searchStatus: 403 } });
+    const a = makeEnv({ server: { repoStatus: 403 } });
     await a.auth();
     const r = await a.send({ type: 'folderScores' });
     assert.ok(r.ok, r.error);
@@ -123,11 +146,11 @@ function makeEnv({ disk = { local: {}, session: {} }, server = {} } = {}) {
     const n = await a.send({ type: 'notes', id: ASSETS[5].id });
     assert.strictEqual(n.notes, 'notes asset-5.jpg');
     assert.strictEqual(a.calls.filter((c) => c.includes('/metadata')).length, 2, 'notes came from cache');
-    const b = makeEnv({ disk: a.disk, server: { searchStatus: 403 } });
+    const b = makeEnv({ disk: a.disk, server: { repoStatus: 403 } });
     for (const k of Object.keys(a.disk.local)) if (k.startsWith('f:')) delete a.disk.local[k];
     await b.send({ type: 'folderScores' });
-    assert.ok(!b.calls.some((c) => c.includes('search-assets')), 'search not retried');
-    console.log('ok fallback + remembered search failure');
+    assert.ok(!b.calls.some((c) => c.includes('/adobe/repository/')), 'bulk listing not retried');
+    console.log('ok fallback + remembered listing failure');
   }
 
   // 4. Expired token: 401 waits for the app's refreshed token, then succeeds.
@@ -153,7 +176,78 @@ function makeEnv({ disk = { local: {}, session: {} }, server = {} } = {}) {
     console.log('ok 5xx retry');
   }
 
-  // 6. Foreign hosts are ignored.
+  // 6. Ranked view data: one bulk listing with notes; folders skipped.
+  {
+    const a = makeEnv();
+    await a.auth();
+    const r = await a.send({ type: 'folderDetails' });
+    assert.ok(r.ok, r.error);
+    assert.strictEqual(r.folderPath, FOLDER);
+    assert.strictEqual(r.items.length, 60, 'directory child skipped');
+    assert.strictEqual(r.items[1].notes, 'bulk notes asset-1.jpg');
+    assert.strictEqual(r.items[1].path, `${FOLDER}/asset-1.jpg`);
+    assert.strictEqual(a.calls.filter((c) => c.includes('/metadata')).length, 0, 'no per-asset calls');
+    const n = await a.send({ type: 'notes', id: ASSETS[1].id });
+    assert.strictEqual(n.notes, 'bulk notes asset-1.jpg', 'notes cached from bulk');
+    console.log('ok folderDetails (bulk)');
+  }
+  {
+    // The folder load now brings notes, so the ranked view needs no extra request.
+    const a = makeEnv();
+    await a.auth();
+    const f = await a.send({ type: 'folderScores' });
+    assert.strictEqual(f.items[1].notes, 'bulk notes asset-1.jpg', 'notes arrive with scores');
+    const before = a.calls.length;
+    const r = await a.send({ type: 'folderDetails' });
+    assert.strictEqual(r.items.length, 60);
+    assert.strictEqual(a.calls.length, before, 'ranked view served from cache');
+    console.log('ok notes with folder load + cached ranked view');
+    // Thumbnails then use the exact rendition link from the listing: one request.
+    const b4 = a.calls.length;
+    const t = await a.send({ type: 'thumb', id: ASSETS[4].id });
+    assert.deepStrictEqual({ ...t.image }, { type: 'image/png', data: 'BwcH' });
+    assert.strictEqual(a.calls.length - b4, 1);
+    assert.ok(a.calls[a.calls.length - 1].includes('cq5dam.thumbnail.319.319.png?cacheinfo=abc'), a.calls[a.calls.length - 1]);
+    console.log('ok thumbnail via listing rendition link');
+  }
+  {
+    const a = makeEnv({ server: { repoStatus: 403 } });
+    await a.auth();
+    const r = await a.send({ type: 'folderDetails' });
+    assert.ok(r.ok, r.error);
+    assert.strictEqual(r.items.length, 60);
+    assert.strictEqual(r.items[3].notes, 'notes asset-3.jpg');
+    assert.strictEqual(r.items[3].path, `${FOLDER}/asset-3.jpg`);
+    console.log('ok folderDetails (fallback)');
+  }
+
+  // 7. Thumbnail fallback and opening the Details page.
+  {
+    const a = makeEnv();
+    await a.auth();
+    const t = await a.send({ type: 'thumb', id: ASSETS[1].id });
+    assert.deepStrictEqual({ ...t.image }, { type: 'image/png', data: 'iVBORw==' });
+    const b = makeEnv({ server: { noRendition: true } });
+    await b.auth();
+    const t2 = await b.send({ type: 'thumb', id: ASSETS[1].id });
+    assert.deepStrictEqual({ ...t2.image }, { type: 'image/avif', data: 'AQID' }, 'falls back to web-optimized');
+    // Learned from the app: its own (small) image URL shape is tried first.
+    await a.send({ type: 'thumbSample', url: `${HOST}/adobe/assets/${encodeURIComponent(ASSETS[0].id)}/as/learned.webp?width=320` });
+    await a.send({ type: 'thumbSample', url: 'https://evil.example.com/urn:aaid:aem:00000000-0000-0000-0000-000000000000/x.png' });
+    const before = a.calls.length;
+    const t3 = await a.send({ type: 'thumb', id: ASSETS[2].id });
+    assert.deepStrictEqual({ ...t3.image }, { type: 'image/webp', data: 'CQk=' });
+    assert.strictEqual(a.calls.length - before, 1, 'one request via the learned pattern');
+    const o = await a.send({ type: 'openAsset', path: `${FOLDER}/My File.jpg` });
+    assert.ok(o.opened);
+    const upd = a.pushed.find((p) => p.type === 'tabUpdate');
+    assert.ok(upd.url.endsWith(`#/@yourorg/assets/detail${FOLDER}/My%20File.jpg`), upd.url);
+    const bad = await a.send({ type: 'openAsset', path: '/etc/passwd' });
+    assert.strictEqual(bad.opened, false);
+    console.log('ok thumbnails + openAsset');
+  }
+
+  // 8. Foreign hosts are ignored.
   {
     const a = makeEnv();
     await a.send({ type: 'auth', host: 'https://evil.example.com', authorization: 'Bearer X' });

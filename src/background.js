@@ -2,13 +2,11 @@
 // memory-only), calls the AEM Assets API with it, and keeps a persistent score
 // cache (chrome.storage.local) so badges render instantly and refresh behind.
 
-const SEARCH_PATH = '/adobe/experimental/aemmcpserver-expires-20991231/search-assets';
 const HOST_RE = /^https:\/\/[a-z0-9-]+\.adobeaemcloud\.com$/i;
 const FRESH_MS = 60_000; // older cached data is shown, then refreshed in the background
-const SEARCH_RETRY_MS = 30 * 60_000; // re-try bulk search this long after it failed
+const BULK_RETRY_MS = 30 * 60_000; // re-try the bulk folder listing this long after it failed
 const AUTH_WAIT_MS = 20_000;
-const MAX_SEARCH_PAGES = 10; // 500 assets
-const MAX_LIST_PAGES = 10;
+const MAX_LIST_PAGES = 10; // 1,000 children (bulk) / 500 (fallback)
 const MAX_REFRESH_PER_FOLDER = 200;
 const MAX_ENTRIES = 5000; // per host
 const CONCURRENCY = 6;
@@ -103,15 +101,15 @@ async function setFolderIndex(host, path, ids) {
   await chrome.storage.local.set({ [`f:${host}|${path}`]: { ids, ts: Date.now() } });
 }
 
-async function searchUnavailable(host) {
-  const { noSearch = {} } = await chrome.storage.session.get('noSearch');
-  return noSearch[host] && Date.now() - noSearch[host] < SEARCH_RETRY_MS;
+async function bulkUnavailable(host) {
+  const { noBulk = {} } = await chrome.storage.session.get('noBulk');
+  return noBulk[host] && Date.now() - noBulk[host] < BULK_RETRY_MS;
 }
 
-async function markSearchUnavailable(host) {
-  const { noSearch = {} } = await chrome.storage.session.get('noSearch');
-  noSearch[host] = Date.now();
-  await chrome.storage.session.set({ noSearch });
+async function markBulkUnavailable(host) {
+  const { noBulk = {} } = await chrome.storage.session.get('noBulk');
+  noBulk[host] = Date.now();
+  await chrome.storage.session.set({ noBulk });
 }
 
 // ---------- helpers ----------
@@ -157,11 +155,12 @@ async function pool(items, limit, fn) {
 function toItem(id, e) {
   const item = { id, name: e?.name ?? null };
   if (e && 'score' in e) item.score = e.score;
+  if (typeof e?.notes === 'string') item.notes = e.notes;
   return item;
 }
 
 // Retries: one fresh token after 401, two backoffs for network errors / 429 / 5xx.
-async function aemFetch(host, path, { method = 'GET', body } = {}) {
+async function aemFetch(host, path, { method = 'GET', body, raw = false } = {}) {
   let staleToken = null;
   for (let attempt = 0; ; attempt++) {
     const auth = await waitForAuth(host, staleToken);
@@ -170,7 +169,11 @@ async function aemFetch(host, path, { method = 'GET', body } = {}) {
       err.status = 0;
       throw err;
     }
-    const headers = { Authorization: auth.authorization, Accept: 'application/json' };
+    // Images: AEM answers a bare "image/*" with 406, so list concrete formats plus a catch-all.
+    const headers = {
+      Authorization: auth.authorization,
+      Accept: raw ? 'image/avif,image/webp,image/png,image/jpeg,*/*;q=0.8' : 'application/json',
+    };
     if (auth.apiKey) headers['x-api-key'] = auth.apiKey;
     if (path.startsWith('/adobe/experimental/')) headers['X-Adobe-Accept-Experimental'] = '1';
     if (body !== undefined) headers['Content-Type'] = 'application/json';
@@ -200,35 +203,46 @@ async function aemFetch(host, path, { method = 'GET', body } = {}) {
       err.status = res.status;
       throw err;
     }
-    return res.json();
+    return raw ? res : res.json();
   }
 }
 
 // ---------- AEM calls ----------
 
-async function searchFolder(host, folderPath) {
+// Bulk: the same folder listing the Assets view uses (Repository API), with each
+// child's asset metadata embedded. One ~1 MB request returns score, notes, path
+// and rendition links for up to 100 direct children; paged with _page.next.
+const REL_META = 'http://ns.adobe.com/adobecloud/rel/metadata/asset';
+const REL_RENDITION = 'http://ns.adobe.com/adobecloud/rel/rendition';
+
+async function repoFolder(host, folderPath) {
   const items = [];
-  let cursor;
-  for (let page = 0; page < MAX_SEARCH_PAGES; page++) {
-    const body = {
-      termFilters: [{ key: 'repositoryMetadata.repo:ancestors', value: folderPath }],
-      projectedFields: { includes: ['repositoryMetadata.repo:name', 'assetMetadata.xdm:score'] },
-      limit: 50,
-    };
-    if (cursor) body.cursor = cursor;
-    const r = await aemFetch(host, SEARCH_PATH, { method: 'POST', body });
-    const results = Array.isArray(r.results) ? r.results : [];
-    for (const x of results) {
-      if (typeof x.assetId !== 'string') continue;
-      const score = toScore(x.assetMetadata?.['xdm:score']);
-      const patch = { score, name: x.repositoryMetadata?.['repo:name'] ?? null };
-      const prev = await cacheGet(host, x.assetId);
-      if (prev && prev.score !== score) patch.notes = undefined; // re-scored: notes are stale
-      const e = await cacheSet(host, x.assetId, patch);
-      items.push(toItem(x.assetId, e));
+  const encPath = folderPath.split('/').map(encodeURIComponent).join('/');
+  let start = null;
+  for (let page = 0; page < MAX_LIST_PAGES; page++) {
+    const qs = new URLSearchParams({ embed: REL_META, limit: '100' });
+    if (start) qs.set('start', start);
+    const r = await aemFetch(host, `/adobe/repository${encPath}?${qs}`);
+    const children = Array.isArray(r.children) ? r.children : [];
+    for (const k of children) {
+      const id = k['repo:assetId'];
+      if (typeof id !== 'string' || k['repo:assetClass'] === 'directory') continue;
+      const md = k._embedded?.[REL_META] || {};
+      const notes = md['xdm:brandScoreNotes'];
+      const thumbHref = (k._links?.[REL_RENDITION] || []).map((x) => x?.href).find((h) => /cq5dam\.thumbnail\.319\.319/.test(h || ''));
+      let thumb;
+      try { if (thumbHref) { const u = new URL(thumbHref); if (u.origin === host) thumb = u.pathname + u.search; } } catch { /* ignore */ }
+      const e = await cacheSet(host, id, {
+        score: toScore(md['xdm:score']),
+        notes: typeof notes === 'string' ? notes : null,
+        name: k['repo:name'] ?? null,
+        path: k['repo:path'] ?? null,
+        ...(thumb ? { thumb } : {}),
+      });
+      items.push(toItem(id, e));
     }
-    cursor = r.cursor;
-    if (!cursor || !results.length) break;
+    start = r._page?.next;
+    if (!start || !children.length) break;
   }
   return items;
 }
@@ -238,11 +252,13 @@ async function fetchAssetMeta(host, id) {
     const r = await aemFetch(host, `/adobe/assets/${encodeURIComponent(id)}/metadata`);
     const md = r.assetMetadata || {};
     const notes = md['xdm:brandScoreNotes'];
-    return cacheSet(host, id, {
-      score: toScore(md['xdm:score']),
-      notes: typeof notes === 'string' ? notes : null,
-      name: r.repositoryMetadata?.['repo:name'] ?? null,
-    });
+    const patch = { score: toScore(md['xdm:score']), notes: typeof notes === 'string' ? notes : null };
+    // Only overwrite name/path when the API actually returned them.
+    const name = r.repositoryMetadata?.['repo:name'];
+    const path = r.repositoryMetadata?.['repo:path'];
+    if (typeof name === 'string') patch.name = name;
+    if (typeof path === 'string') patch.path = path;
+    return cacheSet(host, id, patch);
   } catch (e) {
     if (e.status === 404 || e.status === 403) return cacheSet(host, id, { score: null, notes: null });
     throw e;
@@ -271,10 +287,114 @@ async function listFolder(host, folderPath) {
   await pool(stale, CONCURRENCY, (x) => fetchAssetMeta(host, x.assetId));
   const items = [];
   for (const x of children) {
-    const e = await cacheSet(host, x.assetId, { name: x.name ?? null });
+    const e = await cacheSet(host, x.assetId, { name: x.name ?? null, path: x.name ? `${folderPath}/${x.name}` : null });
     items.push(toItem(x.assetId, e));
   }
   return items;
+}
+
+// Everything the ranked view needs for the folder's direct children:
+// score, notes, path. The folder load already brings notes, so this is
+// usually answered from cache; otherwise refresh, then fill gaps per asset.
+async function folderDetails(host, folderPath) {
+  const c = await hostCache(host);
+  const hasAll = (id) => { const e = c.get(id); return !!e && 'score' in e && e.notes !== undefined; };
+  const idx = await getFolderIndex(host, folderPath);
+  let ids = idx && Date.now() - idx.ts < FRESH_MS && idx.ids.every(hasAll) ? idx.ids : null;
+  if (!ids) ids = (await refreshFolder(host, folderPath)).map((x) => x.id); // bulk with notes, or listing
+  const need = ids.filter((id) => !hasAll(id)).slice(0, MAX_REFRESH_PER_FOLDER);
+  if (need.length) await pool(need, CONCURRENCY, (id) => fetchAssetMeta(host, id));
+  const parentOf = (p) => p.slice(0, p.lastIndexOf('/'));
+  return ids
+    .map((id) => ({ id, ...c.get(id) }))
+    .filter((e) => !e.path || parentOf(e.path) === folderPath) // search also returns subfolders
+    .map(({ id, name, path, score, notes }) => ({ id, name: name ?? null, path: path ?? null, score: score ?? null, notes: notes ?? null }));
+}
+
+// Thumbnails for the ranked view. The grid lazy-loads (and hands its images to
+// the page as blob: URLs), so most assets have no usable image on the page.
+// Order of attempts:
+//   1. the same request the Assets view makes: <asset path>/jcr:content/renditions/cq5dam.thumbnail.319.319.png
+//      (the exact link from the folder listing when we have it)
+//   2. an id-based URL pattern learned from the app's own requests (page-hook.js)
+//   3. the 319px rendition via the Assets API
+//   4. the web-optimized image
+// Returns base64 bytes + type; the content script draws them on a canvas, which
+// sidesteps the page's img-src CSP (data:/blob: images may be blocked there).
+const thumbCache = new Map(); // `${host}|${id}` -> { type, data }, small LRU
+const THUMB_RENDITION = 'cq5dam.thumbnail.319.319.png';
+const ID_IN_URL = /urn(?::|%3A)aaid(?::|%3A)aem(?::|%3A)[0-9a-f-]{36}/i;
+
+// "https://author…/x/urn:aaid:aem:<uuid>/y?w=320" -> { origin, tpl: "/x/{id}/y?w=320", encoded }
+function thumbTemplate(url) {
+  const u = new URL(url);
+  if (!HOST_RE.test(u.origin)) return null;
+  const pathAndQuery = u.pathname + u.search;
+  const m = pathAndQuery.match(ID_IN_URL);
+  if (!m) return null;
+  return { origin: u.origin, tpl: pathAndQuery.replace(ID_IN_URL, '{id}'), encoded: /%3A/i.test(m[0]) };
+}
+
+async function learnThumbUrl(url) {
+  let t = null;
+  try { t = thumbTemplate(url); } catch { /* not a URL */ }
+  if (!t) return;
+  const { thumbTpl = {} } = await chrome.storage.session.get('thumbTpl');
+  thumbTpl[t.origin] = t;
+  await chrome.storage.session.set({ thumbTpl });
+}
+
+async function fetchThumb(host, id) {
+  const key = `${host}|${id}`;
+  if (thumbCache.has(key)) {
+    const v = thumbCache.get(key);
+    thumbCache.delete(key);
+    thumbCache.set(key, v);
+    return v;
+  }
+  const enc = encodeURIComponent(id);
+  const { thumbTpl = {} } = await chrome.storage.session.get('thumbTpl');
+  const learned = thumbTpl[host];
+  const entry = await cacheGet(host, id);
+  const path = entry?.path;
+  const candidates = [
+    entry?.thumb, // exact rendition link from the folder listing
+    // What the Assets view itself fetches for grid thumbnails (path-based JCR rendition).
+    path && `${path.split('/').map(encodeURIComponent).join('/')}/jcr%3Acontent/renditions/${THUMB_RENDITION}`,
+    learned && learned.tpl.replace('{id}', learned.encoded ? enc : id),
+    `/adobe/assets/${enc}/renditions/${THUMB_RENDITION}/as/thumb.png`,
+    `/adobe/assets/${enc}`, // web-optimized original
+  ].filter(Boolean);
+  let res = null;
+  let lastErr = null;
+  for (const path of candidates) {
+    try {
+      res = await aemFetch(host, path, { raw: true });
+      if ((res.headers.get('content-type') || '').startsWith('image/')) break;
+      res = null;
+    } catch (e) {
+      lastErr = e;
+      if (e.status === 0) throw e; // no token yet
+    }
+  }
+  if (!res) throw lastErr || new Error('no thumbnail');
+  const type = res.headers.get('content-type') || 'image/png';
+  const bytes = new Uint8Array(await res.arrayBuffer());
+  let bin = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  const v = { type, data: btoa(bin) };
+  thumbCache.set(key, v);
+  if (thumbCache.size > 60) thumbCache.delete(thumbCache.keys().next().value);
+  return v;
+}
+
+// Open an asset's Details page in the same tab (works from any frame).
+function detailUrl(tabUrl, assetPath) {
+  const u = new URL(tabUrl);
+  const m = u.hash.match(/^(#\/@[^/]+\/assets)\//);
+  if (!m || !assetPath?.startsWith('/content/dam/')) return null;
+  u.hash = `${m[1]}/detail${assetPath.split('/').map(encodeURIComponent).join('/')}`;
+  return u.href;
 }
 
 const refreshes = new Map(); // `${host}|${path}` -> Promise<items>
@@ -284,13 +404,13 @@ function refreshFolder(host, folderPath) {
   if (refreshes.has(key)) return refreshes.get(key);
   const p = (async () => {
     let items = null;
-    if (!(await searchUnavailable(host))) {
+    if (!(await bulkUnavailable(host))) {
       try {
-        items = await searchFolder(host, folderPath);
+        items = await repoFolder(host, folderPath); // scores + notes in one request
       } catch (e) {
-        if (e.status === 0) throw e; // no token: not the search endpoint's fault
-        await markSearchUnavailable(host);
-        console.warn('[Grid Brand Score] bulk search unavailable, using per-asset metadata:', e.message);
+        if (e.status === 0) throw e; // no token: not the endpoint's fault
+        await markBulkUnavailable(host);
+        console.warn('[Grid Brand Score] folder listing unavailable, using per-asset metadata:', e.message);
       }
     }
     if (!items) items = await listFolder(host, folderPath);
@@ -345,7 +465,7 @@ async function handle(msg, sender) {
       const { folderPath } = parseTabUrl(sender.tab?.url || '');
       const host = await resolveHost(sender);
       if (!folderPath || !host) return { items: [], noFolder: true };
-      return folderScores(host, folderPath, sender.tab?.id);
+      return { ...(await folderScores(host, folderPath, sender.tab?.id)), folderPath };
     }
 
     case 'assetScores': {
@@ -358,6 +478,29 @@ async function handle(msg, sender) {
       });
       // Failed ids are omitted so the content script retries them with backoff.
       return { items: ids.map((id, i) => entries[i] && toItem(id, entries[i])).filter(Boolean) };
+    }
+
+    case 'folderDetails': {
+      const { folderPath } = parseTabUrl(sender.tab?.url || '');
+      const host = await resolveHost(sender);
+      if (!folderPath || !host) return { items: [], folderPath: null };
+      return { items: await folderDetails(host, folderPath), folderPath };
+    }
+
+    case 'thumb': {
+      const host = await resolveHost(sender);
+      if (!host || typeof msg.id !== 'string') return { image: null };
+      return { image: await fetchThumb(host, msg.id) };
+    }
+
+    case 'thumbSample':
+      if (typeof msg.url === 'string') await learnThumbUrl(msg.url);
+      return {};
+
+    case 'openAsset': {
+      const url = sender.tab?.url && detailUrl(sender.tab.url, msg.path);
+      if (url && sender.tab?.id != null) await chrome.tabs.update(sender.tab.id, { url });
+      return { opened: !!url };
     }
 
     case 'notes': {

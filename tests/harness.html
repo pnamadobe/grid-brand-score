@@ -12,10 +12,16 @@
   .meta { padding: 8px 12px; }
   .meta .name { color: #555; word-break: break-all; }
   .icon { width: 16px; height: 16px; }
+  /* mock React Spectrum sort menu */
+  .popover { position: absolute; background: #fff; border-radius: 8px; box-shadow: 0 4px 16px rgba(0,0,0,.2); padding: 6px; min-width: 200px; }
+  .popover [role=menuitemradio] { display: flex; gap: 10px; padding: 8px 12px; border-radius: 6px; cursor: default; font-size: 15px; }
+  .popover [role=menuitemradio][aria-checked=true] { background: #e6e6e6; }
+  .popover .check { width: 14px; color: #1473e6; }
 </style>
 </head>
 <body>
-<p><button id="recycle">Recycle cards (virtualization)</button> <button id="names">Switch to name-only cards</button></p>
+<p><button id="recycle">Recycle cards (virtualization)</button> <button id="names">Switch to name-only cards</button>
+   <button id="sortBtn" aria-haspopup="menu">Sort by Name ▾</button></p>
 <div class="grid" id="grid"></div>
 <script>
 // Fixture mirrors the real folder (scores from AEM MCP read)
@@ -28,8 +34,12 @@ const FIXTURE = [
   ['foodie-europe.indd', null],
   ['MOBILE_WINDOW_750x259_ski-couple.jpg', 87.5],
   ['_run_log.txt', null],
-].map(([name, score], i) => ({ id: `urn:aaid:aem:00000000-0000-0000-0000-${String(i).padStart(12, '0')}`, name, score }));
+];
+const EXTRA = [['TALL_BANNER_160x600_reunion.jpg', 78.2], ['SOCIAL_STORY_1080x1920_beach-couple.jpg', 90.7], ['LEADERBOARD_728x90_city-break.jpg', 81.4]];
+const NO_SCORES = location.search.includes('noscores');
+const ALL = [...FIXTURE, ...EXTRA].map(([name, score], i) => ({ id: `urn:aaid:aem:00000000-0000-0000-0000-${String(i).padStart(12, '0')}`, name, score: NO_SCORES ? null : score }));
 
+FIXTURE.length = 0; FIXTURE.push(...ALL.slice(0, 8));
 const svg = (c) => 'data:image/svg+xml,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="400" height="200"><rect width="400" height="200" fill="${c}"/></svg>`);
 const icon = 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"><circle cx="8" cy="8" r="7" fill="#888"/></svg>');
 let withIds = true;
@@ -45,7 +55,8 @@ function render(order) {
       grid.appendChild(card);
     }
     if (withIds) card.setAttribute('data-id', a.id); else card.removeAttribute('data-id');
-    card.querySelector('.thumb img').src = svg(`hsl(${i * 45},40%,60%)`);
+    // ?datathumbs: data: URLs the extension can't pattern, forcing the background thumbnail fallback
+    card.querySelector('.thumb img').src = location.search.includes('datathumbs') ? svg(`hsl(${i * 45},40%,60%)`) : `thumb.svg?asset=${encodeURIComponent(a.id)}`;
     card.querySelector('.icon').src = icon;
     card.querySelector('.title').textContent = 'Title ' + i;
     card.querySelector('.name').textContent = a.name;
@@ -66,6 +77,15 @@ window.chrome = {
       if (msg.type === 'folderScores') res.items = withIds ? FIXTURE.slice(0, 3).map(({ id, name, score }) => ({ id, name, score }))
                                                          : FIXTURE.map(({ id, name, score }) => ({ id, name, score }));
       if (msg.type === 'assetScores') res.items = msg.ids.map((id) => { const a = FIXTURE.find((x) => x.id === id); return { id, name: a.name, score: a.score }; });
+      if (msg.type === 'folderDetails') res = { ok: true, folderPath: '/content/dam/campaigns/spring/output',
+        items: ALL.map(({ id, name, score }) => ({ id, name, score, path: `/content/dam/campaigns/spring/output/${name}`,
+          notes: score == null ? null : `Notes for ${name}. Governance: 5/7 applicable checks pass; fails approved-colour. Composition is competent but static. Logo clearance 9.6/10 (lockup on card/panel, clear of faces). Blended brand score ${score}/100 = 50% compliance, 30% clearance, 20% craft.` })) };
+      if (msg.type === 'thumb') { // bytes like the background sends; drawn on a canvas by ranked.js
+        const c = document.createElement('canvas'); c.width = 300; c.height = 180;
+        const g = c.getContext('2d'); g.fillStyle = '#c0a07f'; g.fillRect(0, 0, 300, 180); g.fillStyle = '#1d2b4f'; g.fillRect(0, 100, 300, 80);
+        res.image = { type: 'image/png', data: c.toDataURL('image/png').split(',')[1] };
+      }
+      if (msg.type === 'openAsset') window.__opened = msg.path;
       if (msg.type === 'notes') { const a = FIXTURE.find((x) => x.id === msg.id); res.notes = `Notes for ${a.name}: Governance 5/6 checks pass. <b>not html</b>`; }
       // Folder load is deliberately slow so we can check per-asset requests wait for it.
       setTimeout(() => { if (msg.type === 'folderScores') window.__msgLog.push('folderScores:done'); cb(res); }, msg.type === 'folderScores' ? 800 : 50);
@@ -79,12 +99,37 @@ window.chrome = {
 
 render(FIXTURE);
 document.getElementById('recycle').onclick = () => render([...FIXTURE].reverse());
+// Mock Sort by menu: portal-style popover that closes on Escape / outside press.
+document.getElementById('sortBtn').onclick = (e) => {
+  if (document.querySelector('.popover')) return;
+  const pop = document.createElement('div');
+  pop.className = 'popover';
+  pop.setAttribute('role', 'menu');
+  const r = e.target.getBoundingClientRect();
+  pop.style.left = r.left + 'px'; pop.style.top = (r.bottom + window.scrollY + 4) + 'px';
+  for (const label of ['Name', 'Size', 'Modified', 'Created']) {
+    const it = document.createElement('div');
+    it.setAttribute('role', 'menuitemradio');
+    it.setAttribute('aria-checked', String(label === 'Name'));
+    it.innerHTML = `<span class="check">${label === 'Name' ? '✓' : ''}</span><span class="label">${label}</span>`;
+    it.onclick = () => { window.__appSort = label; pop.remove(); };
+    pop.appendChild(it);
+  }
+  // Like React Aria: close on Escape or on a press outside the popover.
+  const done = () => { pop.remove(); document.removeEventListener('keydown', onKey, true); document.removeEventListener('pointerdown', onOutside, true); };
+  const onKey = (ev) => { if (ev.key === 'Escape') done(); };
+  const onOutside = (ev) => { if (!pop.contains(ev.target) && ev.target !== e.target) done(); };
+  document.addEventListener('keydown', onKey, true);
+  setTimeout(() => document.addEventListener('pointerdown', onOutside, true));
+  document.body.appendChild(pop);
+};
 document.getElementById('names').onclick = () => {
   withIds = false;
   document.getElementById('grid').replaceChildren();
   render(FIXTURE);
 };
 </script>
+<script src="../src/ranked.js"></script>
 <script src="../src/content.js"></script>
 </body>
 </html>

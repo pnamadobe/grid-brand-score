@@ -71,6 +71,19 @@
 
   const isAemApi = (url) => AEM_RE.test(url) && /\/adobe\//.test(url);
 
+  // Thumbnails: the grid lazy-loads, so the ranked view can't borrow images for
+  // cards that were never drawn. Report the URL shape the app uses for asset
+  // images, so the extension can request the same small images for any asset.
+  const ID_IN_URL = /urn(?::|%3A)aaid(?::|%3A)aem(?::|%3A)[0-9a-f-]{36}/i;
+  const seenShapes = new Set();
+  function reportThumb(url, contentType) {
+    if (!/^image\//i.test(contentType || '') || !ID_IN_URL.test(url)) return;
+    const shape = url.replace(ID_IN_URL, '{id}').replace(/[?#].*$/, '');
+    if (seenShapes.has(shape) || seenShapes.size > 20) return;
+    seenShapes.add(shape);
+    post('thumbUrl', { url });
+  }
+
   // fetch
   const origFetch = window.fetch;
   window.fetch = function (input, init) {
@@ -83,12 +96,14 @@
       }
     } catch { /* never break the app */ }
     const p = origFetch.apply(window, arguments);
-    if (url && isAemApi(url)) {
+    if (url && AEM_RE.test(url)) {
       p.then((res) => {
         const ct = res.headers.get('content-type') || '';
-        if (res.ok && ct.includes('json')) {
+        if (!res.ok) return;
+        if (isAemApi(url) && ct.includes('json')) {
           res.clone().json().then((j) => harvestFrom(url, j)).catch(() => {});
         }
+        reportThumb(url, ct);
       }).catch(() => {});
     }
     return p;
@@ -111,10 +126,12 @@
     const url = this.__gbsUrl;
     try {
       if (url && AEM_RE.test(url)) reportAuth(url, this.__gbsHeaders || {});
-      if (url && isAemApi(url)) {
+      if (url && AEM_RE.test(url)) {
         this.addEventListener('load', () => {
           try {
             if (this.status < 200 || this.status >= 300) return;
+            reportThumb(url, this.getResponseHeader('content-type'));
+            if (!isAemApi(url)) return;
             if (this.responseType === 'json') harvestFrom(url, this.response);
             else if ((this.responseType === '' || this.responseType === 'text') &&
                      (this.getResponseHeader('content-type') || '').includes('json')) {

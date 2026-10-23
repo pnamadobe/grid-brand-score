@@ -27,7 +27,7 @@
   };
 
   const BADGE_CSS = `
-    :host { all: initial; position: absolute; z-index: 5; pointer-events: auto; }
+    :host { all: initial; position: absolute; z-index: 1; pointer-events: auto; }
     .pill {
       display: inline-flex; align-items: center; gap: 4px;
       font: 700 12px/1 adobe-clean, "Source Sans Pro", -apple-system, system-ui, sans-serif;
@@ -54,6 +54,11 @@
     scores: new Map(), // id -> { score: number|null, name }
     notes: new Map(), // id -> string|null
     byName: new Map(), // file name -> id
+    names: new Map(), // id -> file name
+    folderIds: new Set(), // assets in the current folder (from the folder load)
+    visibleIds: new Set(), // asset cards found on the last scan
+    thumbs: new Map(), // id -> the app's own thumbnail URL, seen on a rendered card
+    thumbTemplate: undefined, // inferred URL pattern for unseen assets (null = none)
     pending: new Set(),
     retry: new Map(), // id -> { n, at } backoff for ids that failed to load
     folderLoading: true, // hold per-asset requests until the folder load settles
@@ -87,7 +92,7 @@
   function merge(items) {
     for (const it of items || []) {
       if (typeof it?.id !== 'string') continue;
-      if (it.name) state.byName.set(it.name, it.id);
+      if (it.name) { state.byName.set(it.name, it.id); state.names.set(it.id, it.name); }
       if ('score' in it) state.scores.set(it.id, { score: toScore(it.score), name: it.name ?? null });
       if (typeof it.notes === 'string') state.notes.set(it.id, it.notes);
     }
@@ -98,6 +103,8 @@
     const d = e.data;
     if (d[MSG] === 'auth') {
       send('auth', { host: d.host, authorization: d.authorization, apiKey: d.apiKey });
+    } else if (d[MSG] === 'thumbUrl' && typeof d.url === 'string') {
+      send('thumbSample', { url: d.url });
     } else if (d[MSG] === 'harvest' && Array.isArray(d.items)) {
       merge(d.items);
       send('harvest', { host: d.host, items: d.items });
@@ -106,7 +113,7 @@
   });
 
   chrome.runtime.onMessage.addListener((msg) => {
-    if (msg?.type === 'navigated') loadFolder();
+    if (msg?.type === 'navigated') { ranked?.close(); loadFolder(); }
     else if (msg?.type === 'scores' && Array.isArray(msg.items)) { merge(msg.items); schedule(); }
   });
 
@@ -115,11 +122,15 @@
   async function loadFolder() {
     const gen = ++folderGen;
     state.folderLoading = true;
+    state.folderIds = new Set();
+    state.folderPath = null;
     for (let attempt = 0; attempt < 5; attempt++) {
       const res = await send('folderScores');
       if (gen !== folderGen) return; // superseded by a newer navigation
       if (res) {
         merge(res.items);
+        state.folderPath = res.folderPath || null;
+        for (const it of res.items || []) if (typeof it?.id === 'string') state.folderIds.add(it.id);
         break;
       }
       await new Promise((r) => setTimeout(r, 1500 * 2 ** attempt));
@@ -218,14 +229,62 @@
     return cards;
   }
 
-  function thumbAnchor(card) {
+  function thumbImg(card) {
     let best = null;
     let bestArea = 0;
     for (const img of card.querySelectorAll(SELECTORS.thumb)) {
       const area = img.clientWidth * img.clientHeight;
       if (area > bestArea) { best = img; bestArea = area; }
     }
-    const anchor = (best || card.querySelector(SELECTORS.thumb))?.parentElement || card;
+    return best || card.querySelector(SELECTORS.thumb);
+  }
+
+  function rememberThumb(id, img) {
+    const src = img?.currentSrc || img?.src;
+    if (!src || src.startsWith('data:') || state.thumbs.get(id) === src) return;
+    state.thumbs.set(id, src);
+    // Plain <img> loads are invisible to page-hook.js; share AEM-hosted image
+    // URLs so the background can request the same size for any asset.
+    if (!state.sentThumbSample && /^https:\/\/[a-z0-9-]+\.adobeaemcloud\.com\//i.test(src) && /urn(?::|%3A)aaid/i.test(src)) {
+      state.sentThumbSample = true;
+      send('thumbSample', { url: src });
+    }
+    if (!state.thumbTemplate) state.thumbTemplate = undefined; // re-infer with the new sample
+  }
+
+  // Learn the app's thumbnail URL pattern from rendered cards, so the ranked
+  // view can show assets that were never scrolled into the grid.
+  function inferTemplate() {
+    for (const [id, src] of state.thumbs) {
+      if (src.startsWith('blob:')) continue; // per-document object URLs aren't patterned
+      const uuid = id.replace(/^urn:aaid:aem:/, '');
+      let t = null;
+      for (const [needle, token] of [[id, '{id}'], [encodeURIComponent(id), '{eid}'], [uuid, '{uuid}']]) {
+        if (src.includes(needle)) { t = src.split(needle).join(token); break; }
+      }
+      if (!t) continue;
+      const name = state.names.get(id);
+      if (name) {
+        for (const v of [encodeURIComponent(name), name]) if (t.includes(v)) { t = t.split(v).join('{name}'); break; }
+      }
+      return t;
+    }
+    return null;
+  }
+
+  function thumbFor(id, name) {
+    if (state.thumbs.has(id)) return state.thumbs.get(id);
+    if (state.thumbTemplate === undefined) state.thumbTemplate = inferTemplate();
+    const t = state.thumbTemplate;
+    if (!t || (t.includes('{name}') && !name)) return null;
+    return t.split('{id}').join(id)
+      .split('{eid}').join(encodeURIComponent(id))
+      .split('{uuid}').join(id.replace(/^urn:aaid:aem:/, ''))
+      .split('{name}').join(encodeURIComponent(name || ''));
+  }
+
+  function thumbAnchor(card) {
+    const anchor = thumbImg(card)?.parentElement || card;
     if (getComputedStyle(anchor).position === 'static') anchor.style.position = 'relative';
     return anchor;
   }
@@ -361,7 +420,9 @@
     if (state.settings.enabled && document.body) {
       const missing = [];
       const cards = findCards();
+      state.visibleIds = new Set(cards.keys());
       for (const [id, card] of cards) {
+        rememberThumb(id, thumbImg(card));
         const entry = state.scores.get(id);
         if (entry === undefined) {
           if (!state.folderLoading && canRequest(id)) missing.push(id);
@@ -385,7 +446,33 @@
     for (const h of document.querySelectorAll(`[${BADGE_ATTR}]`)) if (!live.has(h)) h.remove();
   }
 
+  // Assets of the current folder; falls back to the cards on screen when there
+  // is no folder listing (e.g. search results).
+  const currentIds = () => (state.folderIds.size ? state.folderIds : state.visibleIds);
+
+  // "Sort by > Brand score" is offered only when this folder has scored assets.
+  function folderHasScores() {
+    for (const id of currentIds()) if (typeof state.scores.get(id)?.score === 'number') return true;
+    return false;
+  }
+
+  // "Sort by > Brand score" menu entry + ranked overlay (src/ranked.js).
+  const ranked = globalThis.__gbsRanked?.({
+    send,
+    available: folderHasScores,
+    folderPath: () => state.folderPath,
+    items: () => [...currentIds()].map((id) => {
+      const e = state.scores.get(id);
+      return { id, name: e?.name ?? state.names.get(id) ?? null, score: e?.score ?? null };
+    }),
+    notesFor: (id) => state.notes.get(id) ?? null,
+    thumbFor,
+    fmt,
+    band,
+  });
+
   new MutationObserver((mutations) => {
+    ranked?.scanMenus(); // synchronous so the entry appears with the menu, not after it
     for (const m of mutations) {
       if (m.type === 'attributes') { schedule(); return; }
       for (const n of m.addedNodes) {
