@@ -88,6 +88,10 @@ There's nothing to do. Browse folders as usual and the badges appear on their ow
 
 ### Ranked view (Sort by › Brand score)
 
+<p align="center">
+  <img src="docs/sort-by-brand-score.svg" alt="The Sort by menu with an added Brand score entry, which opens a ranked view of the folder's assets ordered by score" width="1000">
+</p>
+
 Open the **Sort by** menu above the grid and choose **Brand score**. That opens a ranked view of every asset in the folder, including ones you haven't scrolled to yet. The entry only appears in folders that contain at least one asset with an `xdm:score`.
 
 - **Summary:** how many assets are scored, plus the average, median and range.

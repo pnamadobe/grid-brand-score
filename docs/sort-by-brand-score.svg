@@ -1,0 +1,127 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 470" width="1000" height="470" font-family="-apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">
+  <rect width="1000" height="470" fill="#f5f5f5"/>
+
+  <!-- ===== Step 1: Sort by menu ===== -->
+  <text x="24" y="34" font-size="13" font-weight="700" fill="#6e6e6e" letter-spacing=".06em">1 · SORT BY MENU</text>
+  <g transform="translate(24,52)">
+    <rect width="300" height="380" rx="12" fill="#ffffff" stroke="#e1e1e1"/>
+    <!-- toolbar -->
+    <rect x="18" y="20" width="16" height="16" rx="4" fill="none" stroke="#222" stroke-width="2"/>
+    <path d="M50 24h10M50 29h7M50 34h4M66 22v14M62 26l4-4 4 4" stroke="#222" stroke-width="1.8" fill="none" stroke-linecap="round"/>
+    <text x="88" y="33" font-size="14" fill="#444">Sort by</text>
+    <text x="146" y="33" font-size="14" font-weight="600" fill="#222">Name</text>
+    <path d="M190 26l5 5 5-5" stroke="#222" stroke-width="1.8" fill="none" stroke-linecap="round"/>
+    <!-- popover -->
+    <g transform="translate(60,52)">
+      <rect width="200" height="196" rx="10" fill="#ffffff" stroke="#e6e6e6"/>
+      <rect x="0" y="0" width="200" height="196" rx="10" fill="none" stroke="#000" stroke-opacity=".06" stroke-width="6"/>
+      <rect x="8" y="8" width="184" height="32" rx="7" fill="#e9e9e9"/>
+      <path d="M20 24l4 4 8-9" stroke="#1473e6" stroke-width="2.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+      <text x="44" y="29" font-size="14.5" fill="#222">Name</text>
+      <text x="44" y="61" font-size="14.5" fill="#222">Size</text>
+      <text x="44" y="93" font-size="14.5" fill="#222">Modified</text>
+      <text x="44" y="125" font-size="14.5" fill="#222">Created</text>
+      <!-- injected entry (hovered) -->
+      <rect x="8" y="138" width="184" height="32" rx="7" fill="#e3eefc"/>
+      <text x="44" y="159" font-size="14.5" font-weight="600" fill="#0d66d0">Brand score</text>
+      <!-- cursor -->
+      <path d="M150 150 l0 16 l4 -4 l3 7 l3 -1 l-3 -7 l6 0 z" fill="#000" stroke="#fff" stroke-width="1.2"/>
+    </g>
+    <!-- callout -->
+    <text x="24" y="290" font-size="12.5" fill="#555">Added by the extension, only in</text>
+    <text x="24" y="308" font-size="12.5" fill="#555">folders that have scored assets.</text>
+    <text x="24" y="334" font-size="12.5" fill="#555">Name / Size / Modified / Created</text>
+    <text x="24" y="352" font-size="12.5" fill="#555">still work exactly as before.</text>
+  </g>
+
+  <!-- arrow -->
+  <path d="M338 240 h30" stroke="#1473e6" stroke-width="3" fill="none"/>
+  <path d="M366 232 l10 8 -10 8" fill="#1473e6"/>
+
+  <!-- ===== Step 2: Ranked view ===== -->
+  <text x="392" y="34" font-size="13" font-weight="700" fill="#6e6e6e" letter-spacing=".06em">2 · RANKED VIEW</text>
+  <g transform="translate(392,52)">
+    <rect width="584" height="380" rx="12" fill="#f8f8f8" stroke="#dcdcdc"/>
+    <path d="M0 12 a12 12 0 0 1 12 -12 h560 a12 12 0 0 1 12 12 v118 h-584 z" fill="#ffffff"/>
+    <line x1="0" y1="130" x2="584" y2="130" stroke="#e1e1e1"/>
+    <!-- ribbon -->
+    <g transform="translate(18,16) scale(.22)">
+      <polygon points="44,70 26,122 40,114 50,126 64,80" fill="#0a4fa8"/><polygon points="84,70 102,122 88,114 78,126 64,80" fill="#0d66d0"/>
+      <circle cx="64" cy="50" r="44" fill="#1473e6"/><circle cx="64" cy="50" r="31" fill="#fff"/><circle cx="64" cy="50" r="27" fill="#0d66d0"/>
+      <polygon points="64,36 68,46 79,46 70,53 73,64 64,57 55,64 58,53 49,46 60,46" fill="#ffd24a"/>
+    </g>
+    <text x="54" y="31" font-size="15" font-weight="800" fill="#222">Ranked by brand score</text>
+    <text x="54" y="48" font-size="11" fill="#6e6e6e">output · 80 scored · 10 without a score</text>
+    <text x="562" y="34" font-size="15" fill="#444" text-anchor="end">✕</text>
+    <text x="18" y="78" font-size="15" font-weight="800" fill="#222">85</text>
+    <text x="18" y="92" font-size="9" fill="#6e6e6e" letter-spacing=".05em">AVERAGE</text>
+    <text x="74" y="78" font-size="15" font-weight="800" fill="#222">86.8</text>
+    <text x="74" y="92" font-size="9" fill="#6e6e6e" letter-spacing=".05em">MEDIAN</text>
+    <text x="136" y="78" font-size="15" font-weight="800" fill="#222">73.4–90.7</text>
+    <text x="136" y="92" font-size="9" fill="#6e6e6e" letter-spacing=".05em">RANGE</text>
+    <!-- chips -->
+    <rect x="18" y="102" width="50" height="20" rx="10" fill="#222"/><text x="43" y="116" font-size="10.5" fill="#fff" text-anchor="middle">All 80</text>
+    <rect x="74" y="102" width="70" height="20" rx="10" fill="#fff" stroke="#d5d5d5"/><circle cx="86" cy="112" r="4" fill="#0f7d55"/><text x="94" y="116" font-size="10.5" fill="#333">Green 51</text>
+    <rect x="150" y="102" width="70" height="20" rx="10" fill="#fff" stroke="#d5d5d5"/><circle cx="162" cy="112" r="4" fill="#b35c00"/><text x="170" y="116" font-size="10.5" fill="#333">Amber 11</text>
+    <rect x="226" y="102" width="62" height="20" rx="10" fill="#fff" stroke="#d5d5d5"/><circle cx="238" cy="112" r="4" fill="#c9252d"/><text x="246" y="116" font-size="10.5" fill="#333">Red 18</text>
+    <rect x="404" y="102" width="80" height="20" rx="10" fill="#222"/><text x="444" y="116" font-size="10.5" fill="#fff" text-anchor="middle">Highest first</text>
+    <rect x="490" y="102" width="76" height="20" rx="10" fill="#fff" stroke="#d5d5d5"/><text x="528" y="116" font-size="10.5" fill="#333" text-anchor="middle">Lowest first</text>
+
+    <!-- tiles -->
+    <g font-size="10">
+      <!-- tile helper: rank, thumb color, score, band color, name -->
+      <g transform="translate(18,146)">
+        <rect width="130" height="214" rx="8" fill="#fff" stroke="#e3e3e3"/>
+        <rect x="0" y="0" width="130" height="110" rx="8" fill="#ececec"/>
+        <rect x="35" y="0" width="60" height="110" fill="#6f8fb3"/><rect x="35" y="62" width="60" height="48" fill="#1d2b4f"/><rect x="45" y="72" width="40" height="7" fill="#fff"/><rect x="50" y="83" width="30" height="6" fill="#d7373f"/>
+        <rect x="6" y="6" width="22" height="14" rx="7" fill="#fff"/><text x="17" y="16.5" font-size="8.5" font-weight="800" text-anchor="middle" fill="#222">#1</text>
+        <rect x="92" y="88" width="32" height="16" rx="8" fill="#0f7d55"/><text x="108" y="99.5" font-size="9" font-weight="800" fill="#fff" text-anchor="middle">90.7</text>
+        <text x="8" y="128" font-weight="700" fill="#222">APP_CARD_890x1335_</text>
+        <text x="8" y="140" font-weight="700" fill="#222">solo-adventurer.jpg</text>
+        <text x="8" y="158" fill="#555" font-size="9">The strongest single image —</text>
+        <text x="8" y="170" fill="#555" font-size="9">aspirational lone hiker, clean</text>
+        <text x="8" y="182" fill="#555" font-size="9">horizon. Governance: 6/7 pass…</text>
+        <text x="8" y="200" fill="#1473e6" font-size="9">More</text>
+      </g>
+      <g transform="translate(156,146)">
+        <rect width="130" height="214" rx="8" fill="#fff" stroke="#e3e3e3"/>
+        <rect x="0" y="0" width="130" height="110" rx="8" fill="#ececec"/>
+        <rect x="35" y="0" width="60" height="110" fill="#c69b77"/><rect x="35" y="62" width="60" height="48" fill="#1d2b4f"/><rect x="45" y="72" width="40" height="7" fill="#fff"/><rect x="50" y="83" width="30" height="6" fill="#d7373f"/>
+        <rect x="6" y="6" width="22" height="14" rx="7" fill="#fff"/><text x="17" y="16.5" font-size="8.5" font-weight="800" text-anchor="middle" fill="#222">#2</text>
+        <rect x="92" y="88" width="32" height="16" rx="8" fill="#0f7d55"/><text x="108" y="99.5" font-size="9" font-weight="800" fill="#fff" text-anchor="middle">90.1</text>
+        <text x="8" y="128" font-weight="700" fill="#222">APP_CARD_890x1335_</text>
+        <text x="8" y="140" font-weight="700" fill="#222">beach-couple.jpg</text>
+        <text x="8" y="158" fill="#555" font-size="9">Warm sunset beach selfie —</text>
+        <text x="8" y="170" fill="#555" font-size="9">strong emotional pull, clearly</text>
+        <text x="8" y="182" fill="#555" font-size="9">on-message for leisure travel…</text>
+        <text x="8" y="200" fill="#1473e6" font-size="9">More</text>
+      </g>
+      <g transform="translate(294,146)">
+        <rect width="130" height="214" rx="8" fill="#fff" stroke="#e3e3e3"/>
+        <rect x="0" y="0" width="130" height="110" rx="8" fill="#ececec"/>
+        <rect x="0" y="30" width="130" height="50" fill="#7f9c8a"/><rect x="70" y="30" width="60" height="50" fill="#1d2b4f"/><rect x="78" y="40" width="44" height="6" fill="#fff"/><rect x="83" y="50" width="34" height="5" fill="#d7373f"/>
+        <rect x="6" y="6" width="22" height="14" rx="7" fill="#fff"/><text x="17" y="16.5" font-size="8.5" font-weight="800" text-anchor="middle" fill="#222">#3</text>
+        <rect x="92" y="88" width="32" height="16" rx="8" fill="#0f7d55"/><text x="108" y="99.5" font-size="9" font-weight="800" fill="#fff" text-anchor="middle">89.9</text>
+        <text x="8" y="128" font-weight="700" fill="#222">WEB_HP_SLIDER_1440x</text>
+        <text x="8" y="140" font-weight="700" fill="#222">500_foodie-europe.jpg</text>
+        <text x="8" y="158" fill="#555" font-size="9">Intimate cafe moment, rich</text>
+        <text x="8" y="170" fill="#555" font-size="9">warm tones, strongly on-brand</text>
+        <text x="8" y="182" fill="#555" font-size="9">for experiential travel…</text>
+        <text x="8" y="200" fill="#1473e6" font-size="9">More</text>
+      </g>
+      <g transform="translate(432,146)">
+        <rect width="130" height="214" rx="8" fill="#fff" stroke="#e3e3e3"/>
+        <rect x="0" y="0" width="130" height="110" rx="8" fill="#ececec"/>
+        <rect x="25" y="10" width="80" height="90" fill="#8a7a6a"/><rect x="25" y="62" width="80" height="38" fill="#1d2b4f"/><rect x="38" y="70" width="54" height="6" fill="#fff"/><rect x="45" y="80" width="40" height="5" fill="#d7373f"/>
+        <rect x="6" y="6" width="22" height="14" rx="7" fill="#fff"/><text x="17" y="16.5" font-size="8.5" font-weight="800" text-anchor="middle" fill="#222">#4</text>
+        <rect x="92" y="88" width="32" height="16" rx="8" fill="#0f7d55"/><text x="108" y="99.5" font-size="9" font-weight="800" fill="#fff" text-anchor="middle">89.7</text>
+        <text x="8" y="128" font-weight="700" fill="#222">APP_CARD_890x1335_</text>
+        <text x="8" y="140" font-weight="700" fill="#222">ski-couple.jpg</text>
+        <text x="8" y="158" fill="#555" font-size="9">High-energy snow selfie; the</text>
+        <text x="8" y="170" fill="#555" font-size="9">red phone adds a pop and the</text>
+        <text x="8" y="182" fill="#555" font-size="9">winter setting is on-season…</text>
+        <text x="8" y="200" fill="#1473e6" font-size="9">More</text>
+      </g>
+    </g>
+  </g>
+</svg>
