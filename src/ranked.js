@@ -87,7 +87,7 @@
   };
 
   globalThis.__gbsRanked = (deps) => {
-    // deps: { send, items(): [{id,name,score}], notesFor(id), thumbFor(id,name), fmt(score), band(score), settings() }
+    // deps: { send, available(), folderPath(), items(): [{id,name,score}], notesFor(id), thumbFor(id,name), fmt(score), makeBander(scores), bandLabel(band) }
     let host = null;
     let root = null;
     let data = []; // [{id, name, path, score, notes}]
@@ -303,11 +303,12 @@
       const scored = data.filter((x) => typeof x.score === 'number');
       const unscored = data.length - scored.length;
       const scores = scored.map((x) => x.score);
+      const band = deps.makeBander(scores); // same rule as the grid badges (fixed or relative)
       const counts = { green: 0, amber: 0, red: 0 };
-      for (const s of scores) counts[deps.band(s)]++;
+      for (const s of scores) counts[band(s)]++;
       const avg = scores.length ? scores.reduce((a, b) => a + b, 0) / scores.length : null;
       const list = scored
-        .filter((x) => ui.band === 'all' || deps.band(x.score) === ui.band)
+        .filter((x) => ui.band === 'all' || band(x.score) === ui.band)
         .sort((a, b) => (ui.order === 'asc' ? a.score - b.score : b.score - a.score) || String(a.name).localeCompare(String(b.name)));
 
       const folderName = (folderPath || deps.folderPath?.() || '').split('/').pop() || 'This folder';
@@ -331,9 +332,9 @@
         el('div', { class: 'row' },
           el('div', { class: 'chips' },
             chip('all', `All ${scored.length}`),
-            chip('green', `Green ${counts.green}`, '#0f7d55'),
-            chip('amber', `Amber ${counts.amber}`, '#b35c00'),
-            chip('red', `Red ${counts.red}`, '#c9252d')),
+            chip('green', `${deps.bandLabel('green')} · ${counts.green}`, '#0f7d55'),
+            chip('amber', `${deps.bandLabel('amber')} · ${counts.amber}`, '#b35c00'),
+            chip('red', `${deps.bandLabel('red')} · ${counts.red}`, '#c9252d')),
           el('div', { class: 'seg', role: 'group', 'aria-label': 'Order' },
             el('button', { 'aria-pressed': String(ui.order === 'desc'), onclick: () => setOrder('desc'), text: 'Highest first' }),
             el('button', { 'aria-pressed': String(ui.order === 'asc'), onclick: () => setOrder('asc'), text: 'Lowest first' }))));
@@ -347,7 +348,7 @@
           el('div', { class: 'thumb', title: x.path ? 'Open asset details' : '', onclick: () => openAsset(x) },
             thumbBox(x),
             el('span', { class: 'rank', text: `#${i + 1}` }),
-            el('span', { class: `pill ${deps.band(x.score)}`, text: deps.fmt(x.score) })),
+            el('span', { class: `pill ${band(x.score)}`, text: deps.fmt(x.score) })),
           el('div', { class: 'meta' },
             el('div', { class: 'name', title: x.name || '', text: x.name || x.id, onclick: () => openAsset(x) }),
             notes,
@@ -377,6 +378,6 @@
       panel.focus?.();
     }
 
-    return { scanMenus, open, close, isOpen: () => !!host };
+    return { scanMenus, open, close, refresh: render, isOpen: () => !!host };
   };
 })();

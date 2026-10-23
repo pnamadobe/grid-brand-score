@@ -31,13 +31,17 @@ AEM's supported extension points can't do this today. App Builder extensions for
 
 ## Features
 
-- **Score badge on every card**, colour-coded by band:
+- **Score badge on every card**, colour-coded by band. You choose one of two colour modes on the Options page:
 
-  | Badge | Default rule |
-  |---|---|
-  | 🟢 Green | score ≥ 85 |
-  | 🟠 Amber | 80 ≤ score < 85 |
-  | 🔴 Red | score < 80 |
+  | Badge | Fixed thresholds (default) | Relative to the folder |
+  |---|---|---|
+  | 🟢 Green | score ≥ 85 | top 25% of the folder's scores |
+  | 🟠 Amber | 80 ≤ score < 85 | middle 50% |
+  | 🔴 Red | score < 80 | bottom 25% |
+
+  - **Fixed** compares every asset to the same bar, so it suits customers with an agreed brand-score target.
+  - **Relative** always picks out the strongest and weakest work in the set, so it suits batches that all score high (or low).
+  - The thresholds and percentages are both editable.
 
 - **Notes on hover.** Hover a badge to read `xdm:brandScoreNotes`. The tooltip opens below and to the left of the cursor, clear of the scrollbar and the window's edge, and flips above when there isn't room below.
 - **Sort by › Brand score.** This adds a **Brand score** entry to the Assets view's own **Sort by** menu, which opens a ranked view of the whole folder. See [Ranked view](#ranked-view-sort-by--brand-score).
@@ -95,7 +99,7 @@ There's nothing to do. Browse folders as usual and the badges appear on their ow
 Open the **Sort by** menu above the grid and choose **Brand score**. That opens a ranked view of every asset in the folder, including ones you haven't scrolled to yet. The entry only appears in folders that contain at least one asset with an `xdm:score`.
 
 - **Summary:** how many assets are scored, plus the average, median and range.
-- **Band filters:** **All**, **Green**, **Amber** or **Red**, each with a count. Ranks re-number within the filter.
+- **Band filters:** **All**, **Green**, **Amber** or **Red**, each with a count. In relative mode the chips read **Top 25%**, **Middle 50%** and **Bottom 25%**. Ranks re-number within the filter.
 - **Order:** **Highest first** or **Lowest first**. Your choice is remembered.
 - **One tile per asset:** rank, thumbnail, score badge, file name and the full brand-score notes (**More** expands long notes).
 - **Click a thumbnail or name** to open that asset's Details page.
@@ -120,8 +124,11 @@ Click the blue ribbon in the toolbar, or right-click it and choose **Options**.
 | Setting | Default | Notes |
 |---|---|---|
 | Show badges | on | Turn off to hide all badges without uninstalling. |
-| Green when score ≥ | 85 | |
-| Amber when score ≥ | 80 | Anything lower is red. |
+| Colour bands | Fixed thresholds | **Fixed thresholds** colours by the score itself. **Relative to the folder** colours by rank among the folder's scored assets. |
+| Green when score ≥ | 85 | Fixed mode. |
+| Amber when score ≥ | 80 | Fixed mode. Anything lower is red. |
+| Green: top % | 25 | Relative mode. Ties at the cut-off stay green. |
+| Red: bottom % | 25 | Relative mode. Ties at the cut-off stay red. The rest are amber. |
 | Badge position | Bottom right | The left positions overlap the Content Credentials icon. |
 
 Changes apply to open tabs immediately, with no refresh needed.
@@ -201,7 +208,7 @@ Per-card requests wait until the folder-level request finishes, so the same asse
 
 | To change… | Edit |
 |---|---|
-| Colour thresholds or position | The Options page |
+| Colour mode, thresholds, percentages or position | The Options page |
 | Badge or tooltip look | `BADGE_CSS` and `TIP_CSS` in `src/content.js` |
 | How cards are found, if the Assets UI changes | `SELECTORS` at the top of `src/content.js` |
 | Which metadata fields are read | The `xdm:score` / `xdm:brandScoreNotes` references in `src/background.js` and `src/page-hook.js` |

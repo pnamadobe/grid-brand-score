@@ -4,11 +4,16 @@
   <meta charset="utf-8">
   <title>AEM Grid Brand Score — Options</title>
   <style>
-    body { font: 14px/1.5 -apple-system, system-ui, sans-serif; margin: 24px; color: #222; max-width: 520px; }
+    body { font: 14px/1.5 -apple-system, system-ui, sans-serif; margin: 24px; color: #222; max-width: 560px; }
     h1 { font-size: 18px; margin: 0 0 16px; }
+    h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .05em; color: #6e6e6e; margin: 22px 0 6px; }
     label { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 10px 0; }
+    label.radio { justify-content: flex-start; align-items: flex-start; }
+    label.radio small { display: block; color: #6e6e6e; }
     input[type=number] { width: 80px; }
     .swatch { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; }
+    .group { border-left: 3px solid #e1e1e1; padding-left: 14px; margin-left: 4px; }
+    .group[hidden] { display: none; }
     #status { color: #0f7d55; min-height: 1.5em; }
     button { padding: 6px 16px; }
   </style>
@@ -16,9 +21,25 @@
 <body>
   <h1>AEM Grid Brand Score</h1>
   <label>Show badges <input type="checkbox" id="enabled"></label>
-  <label><span><span class="swatch" style="background:#0f7d55"></span>Green when score ≥</span><input type="number" id="green" step="0.1" min="0" max="100"></label>
-  <label><span><span class="swatch" style="background:#b35c00"></span>Amber when score ≥</span><input type="number" id="amber" step="0.1" min="0" max="100"></label>
-  <label><span><span class="swatch" style="background:#c9252d"></span>Red below amber threshold</span><span></span></label>
+
+  <h2>Colour bands</h2>
+  <label class="radio"><input type="radio" name="bandMode" value="fixed">
+    <span>Fixed thresholds<small>Colour by the score itself, the same in every folder.</small></span></label>
+  <label class="radio"><input type="radio" name="bandMode" value="relative">
+    <span>Relative to the folder<small>Colour by rank among the folder's scored assets, e.g. top 25% green, bottom 25% red.</small></span></label>
+
+  <div class="group" id="fixedGroup">
+    <label><span><span class="swatch" style="background:#0f7d55"></span>Green when score ≥</span><input type="number" id="green" step="0.1" min="0" max="100"></label>
+    <label><span><span class="swatch" style="background:#b35c00"></span>Amber when score ≥</span><input type="number" id="amber" step="0.1" min="0" max="100"></label>
+    <label><span><span class="swatch" style="background:#c9252d"></span>Red below the amber threshold</span><span></span></label>
+  </div>
+  <div class="group" id="relativeGroup">
+    <label><span><span class="swatch" style="background:#0f7d55"></span>Green: top</span><span><input type="number" id="topPct" step="1" min="0" max="100"> %</span></label>
+    <label><span><span class="swatch" style="background:#b35c00"></span>Amber: middle</span><span id="midPct">50 %</span></label>
+    <label><span><span class="swatch" style="background:#c9252d"></span>Red: bottom</span><span><input type="number" id="bottomPct" step="1" min="0" max="100"> %</span></label>
+  </div>
+
+  <h2>Badge</h2>
   <label>Badge position
     <select id="position">
       <option value="bottom-right">Bottom right of thumbnail</option>

@@ -18,7 +18,7 @@
   const ID_RE = /urn:aaid:aem:[0-9a-f-]{36}/i;
   const BADGE_ATTR = 'data-gbs-badge';
 
-  const DEFAULTS = { enabled: true, green: 85, amber: 80, position: 'bottom-right' };
+  const DEFAULTS = { enabled: true, bandMode: 'fixed', green: 85, amber: 80, topPct: 25, bottomPct: 25, position: 'bottom-right' };
   const POSITIONS = {
     'top-left': 'top:8px;left:8px;',
     'top-right': 'top:8px;right:8px;',
@@ -291,10 +291,41 @@
 
   // ---------- badge ----------
 
-  function band(score) {
-    const { green, amber } = state.settings;
-    return score >= green ? 'green' : score >= amber ? 'amber' : 'red';
+  // Colour bands. Two modes (Options page):
+  //  - fixed:    green >= `green`, amber >= `amber`, else red
+  //  - relative: rank within the folder — top `topPct`% green, bottom `bottomPct`% red,
+  //              the rest amber. Ties at a cut-off stay in the higher band.
+  // Returns a band function for a given set of folder scores, so the grid and the
+  // ranked view colour identically.
+  function makeBander(scores) {
+    const s = state.settings;
+    if (s.bandMode !== 'relative') {
+      return (x) => (x >= s.green ? 'green' : x >= s.amber ? 'amber' : 'red');
+    }
+    const sorted = scores.filter(Number.isFinite).sort((a, b) => b - a);
+    const n = sorted.length;
+    if (!n) return () => 'amber';
+    const top = Math.max(0, Math.min(100, Number(s.topPct) || 0));
+    const bottom = Math.max(0, Math.min(100 - top, Number(s.bottomPct) || 0));
+    const kTop = Math.round((n * top) / 100);
+    const kBottom = Math.round((n * bottom) / 100);
+    const greenCut = kTop ? sorted[kTop - 1] : Infinity;
+    const redCut = kBottom ? sorted[n - kBottom] : -Infinity;
+    return (x) => (x >= greenCut ? 'green' : x <= redCut ? 'red' : 'amber');
   }
+
+  function bandLabel(b) {
+    const s = state.settings;
+    if (s.bandMode !== 'relative') return { green: 'Green', amber: 'Amber', red: 'Red' }[b];
+    const top = Number(s.topPct) || 0;
+    const bottom = Number(s.bottomPct) || 0;
+    return { green: `Top ${top}%`, amber: `Middle ${Math.max(0, 100 - top - bottom)}%`, red: `Bottom ${bottom}%` }[b];
+  }
+
+  // Grid bander, rebuilt from the current folder's scores at the start of every scan.
+  let bander = makeBander([]);
+  const currentFolderScores = () => [...currentIds()].map((id) => state.scores.get(id)?.score).filter((x) => typeof x === 'number');
+  const band = (score) => bander(score);
 
   function fmt(score) {
     return Number.isInteger(score) ? String(score) : score.toFixed(1);
@@ -352,7 +383,9 @@
     tipBox.replaceChildren();
     const head = document.createElement('div');
     head.className = 'head';
-    head.textContent = `Brand score ${fmt(rec.score)}`;
+    head.textContent = state.settings.bandMode === 'relative'
+      ? `Brand score ${fmt(rec.score)} · ${bandLabel(band(rec.score))} of folder`
+      : `Brand score ${fmt(rec.score)}`;
     const body = document.createElement('div');
     body.textContent = notes === undefined ? 'Loading notes…' : notes || 'No brand score notes.';
     tipBox.append(head, body);
@@ -421,6 +454,7 @@
       const missing = [];
       const cards = findCards();
       state.visibleIds = new Set(cards.keys());
+      bander = makeBander(currentFolderScores());
       for (const [id, card] of cards) {
         rememberThumb(id, thumbImg(card));
         const entry = state.scores.get(id);
@@ -468,7 +502,8 @@
     notesFor: (id) => state.notes.get(id) ?? null,
     thumbFor,
     fmt,
-    band,
+    makeBander,
+    bandLabel,
   });
 
   new MutationObserver((mutations) => {
@@ -491,6 +526,7 @@
     if (area !== 'sync') return;
     for (const [k, { newValue }] of Object.entries(changes)) state.settings[k] = newValue;
     schedule();
+    ranked?.refresh(); // re-colour an open ranked view too
   });
 
   if (window === window.top) {
