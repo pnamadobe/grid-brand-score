@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Grid Brand Score harness</title>
+<style>
+  body { font: 13px system-ui, sans-serif; background: #f5f5f5; margin: 16px; }
+  .grid { display: grid; grid-template-columns: repeat(4, 220px); gap: 16px; }
+  .card { background: #fff; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 2px rgba(0,0,0,.15); }
+  .thumb { height: 140px; background: #eaeaea; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+  .thumb img { max-width: 100%; max-height: 100%; }
+  .meta { padding: 8px 12px; }
+  .meta .name { color: #555; word-break: break-all; }
+  .icon { width: 16px; height: 16px; }
+</style>
+</head>
+<body>
+<p><button id="recycle">Recycle cards (virtualization)</button> <button id="names">Switch to name-only cards</button></p>
+<div class="grid" id="grid"></div>
+<script>
+// Fixture mirrors the real folder (scores from AEM MCP read)
+const FIXTURE = [
+  ['MOBILE_WINDOW_750x259_business-traveller.jpg', 83.1],
+  ['WEB_MED_RECTANGLE_300x250_family-trip.jpg', 73.4],
+  ['APP_CARD_890x1335_beach-couple.jpg', 90.1],
+  ['WEB_MED_RECTANGLE_300x250_reunion.jpg', 74],
+  ['SOCIAL_FEED_1080x1080_city-break.jpg', 86.9],
+  ['foodie-europe.indd', null],
+  ['MOBILE_WINDOW_750x259_ski-couple.jpg', 87.5],
+  ['_run_log.txt', null],
+].map(([name, score], i) => ({ id: `urn:aaid:aem:00000000-0000-0000-0000-${String(i).padStart(12, '0')}`, name, score }));
+
+const svg = (c) => 'data:image/svg+xml,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="400" height="200"><rect width="400" height="200" fill="${c}"/></svg>`);
+const icon = 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"><circle cx="8" cy="8" r="7" fill="#888"/></svg>');
+let withIds = true;
+function render(order) {
+  const grid = document.getElementById('grid');
+  // Reuse existing nodes like a virtualized React grid.
+  order.forEach((a, i) => {
+    let card = grid.children[i];
+    if (!card) {
+      card = document.createElement('div');
+      card.className = 'card';
+      card.innerHTML = '<div class="thumb"><img alt=""></div><div class="meta"><img class="icon" alt=""><div class="title"></div><div class="name"></div></div>';
+      grid.appendChild(card);
+    }
+    if (withIds) card.setAttribute('data-id', a.id); else card.removeAttribute('data-id');
+    card.querySelector('.thumb img').src = svg(`hsl(${i * 45},40%,60%)`);
+    card.querySelector('.icon').src = icon;
+    card.querySelector('.title').textContent = 'Title ' + i;
+    card.querySelector('.name').textContent = a.name;
+  });
+}
+
+// Mock chrome APIs used by content.js
+const store = { enabled: true, green: 85, amber: 80, position: 'bottom-right' };
+const storageListeners = [];
+window.__msgLog = [];
+window.chrome = {
+  runtime: {
+    lastError: null,
+    onMessage: { addListener(fn) { window.__push = fn; } }, // __push({type:'scores', items}) simulates a background refresh
+    sendMessage(msg, cb) {
+      window.__msgLog.push(msg.type === 'assetScores' ? `assetScores:${msg.ids.length}` : msg.type);
+      let res = { ok: true };
+      if (msg.type === 'folderScores') res.items = withIds ? FIXTURE.slice(0, 3).map(({ id, name, score }) => ({ id, name, score }))
+                                                         : FIXTURE.map(({ id, name, score }) => ({ id, name, score }));
+      if (msg.type === 'assetScores') res.items = msg.ids.map((id) => { const a = FIXTURE.find((x) => x.id === id); return { id, name: a.name, score: a.score }; });
+      if (msg.type === 'notes') { const a = FIXTURE.find((x) => x.id === msg.id); res.notes = `Notes for ${a.name}: Governance 5/6 checks pass. <b>not html</b>`; }
+      // Folder load is deliberately slow so we can check per-asset requests wait for it.
+      setTimeout(() => { if (msg.type === 'folderScores') window.__msgLog.push('folderScores:done'); cb(res); }, msg.type === 'folderScores' ? 800 : 50);
+    },
+  },
+  storage: {
+    sync: { get(d, cb) { cb({ ...d, ...store }); }, set(o, cb) { Object.assign(store, o); storageListeners.forEach((f) => f(Object.fromEntries(Object.entries(o).map(([k, v]) => [k, { newValue: v }])), 'sync')); cb && cb(); } },
+    onChanged: { addListener(f) { storageListeners.push(f); } },
+  },
+};
+
+render(FIXTURE);
+document.getElementById('recycle').onclick = () => render([...FIXTURE].reverse());
+document.getElementById('names').onclick = () => {
+  withIds = false;
+  document.getElementById('grid').replaceChildren();
+  render(FIXTURE);
+};
+</script>
+<script src="../src/content.js"></script>
+</body>
+</html>
