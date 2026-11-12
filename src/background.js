@@ -439,7 +439,11 @@ async function folderScores(host, folderPath, tabId) {
 
 // ---------- messaging ----------
 
+const ASSETS_TAB_RE = /^https:\/\/experience\.adobe\.com\/.*[?#&]repoId=author-p/i;
+const isAssetsTab = (sender) => ASSETS_TAB_RE.test(sender?.tab?.url || '');
+
 async function handle(msg, sender) {
+  if (!isAssetsTab(sender)) return { items: [], noFolder: true };
   switch (msg?.type) {
     case 'auth':
       await setAuth(msg.host, msg.authorization, msg.apiKey);

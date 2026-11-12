@@ -2,7 +2,14 @@
 // overlays a colour-banded xdm:score badge, with xdm:brandScoreNotes on hover.
 (() => {
   'use strict';
-  if (window.__gbsContent) return;
+  const isAssetsView = () => {
+    if (location.hostname === '127.0.0.1' || location.hostname === 'localhost') return true;
+    if (window !== window.top) return true; // iframe inside the Assets view shell
+    const h = location.href;
+    return h.startsWith('https://experience.adobe.com/?repoId=author-p') ||
+      (/[?#&]repoId=author-p/i.test(h) && /#\/(?:@[^/]+\/)?assets/i.test(h));
+  };
+  if (window.__gbsContent || !isAssetsView()) return;
   window.__gbsContent = true;
 
   const MSG = '__GBS__';

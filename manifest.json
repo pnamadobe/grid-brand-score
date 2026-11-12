@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "AEM Grid Brand Score",
-  "version": "0.4.0",
+  "version": "0.4.3",
   "description": "Shows xdm:score as a colour-banded badge on AEM Assets view grid cards, with xdm:brandScoreNotes on hover.",
   "icons": {
     "16": "icons/icon16.png",
@@ -26,14 +26,14 @@
   },
   "content_scripts": [
     {
-      "matches": ["https://*.adobe.com/*", "https://*.adobeaemcloud.com/*"],
+      "matches": ["https://experience.adobe.com/*", "https://*.adobeaemcloud.com/*"],
       "js": ["src/page-hook.js"],
       "world": "MAIN",
       "run_at": "document_start",
       "all_frames": true
     },
     {
-      "matches": ["https://*.adobe.com/*", "https://*.adobeaemcloud.com/*"],
+      "matches": ["https://experience.adobe.com/*", "https://*.adobeaemcloud.com/*"],
       "js": ["src/ranked.js", "src/content.js"],
       "run_at": "document_idle",
       "all_frames": true

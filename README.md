@@ -199,7 +199,7 @@ Per-card requests wait until the folder-level request finishes, so the same asse
 - **Narrow permissions:**
   - `storage`, for settings and the cache.
   - Host access to `experience.adobe.com` and `*.adobeaemcloud.com`.
-  - Content scripts run on `*.adobe.com` and `*.adobeaemcloud.com` frames, and stay idle unless they find an Assets grid.
+  - Content scripts are injected only on `experience.adobe.com` and `*.adobeaemcloud.com`, and exit immediately unless the tab is an AEM Assets view (`https://experience.adobe.com/?repoId=author-p…`).
 - **Strict host checks:** only `https://<name>.adobeaemcloud.com` hosts are accepted. Messages from other extensions are ignored.
 - **Notes can't run code:** they're always rendered as plain text (`textContent`), never as HTML.
 - **Cached data stays local:** scores and notes are stored on your machine, inside the extension's own storage.

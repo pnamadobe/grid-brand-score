@@ -247,7 +247,7 @@ function makeEnv({ disk = { local: {}, session: {} }, server = {} } = {}) {
     console.log('ok thumbnails + openAsset');
   }
 
-  // 8. Foreign hosts are ignored.
+  // 8. Foreign hosts and non-Assets tabs are ignored.
   {
     const a = makeEnv();
     await a.send({ type: 'auth', host: 'https://evil.example.com', authorization: 'Bearer X' });

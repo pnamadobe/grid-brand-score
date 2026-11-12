@@ -4,7 +4,14 @@
 // this same window (targetOrigin = own origin), where content.js picks it up.
 (() => {
   'use strict';
-  if (window.__gbsHooked) return;
+  const isAssetsView = () => {
+    if (!/^https:\/\//i.test(location.origin)) return false;
+    if (window !== window.top) return true; // iframe inside the Assets view shell
+    const h = location.href;
+    return h.startsWith('https://experience.adobe.com/?repoId=author-p') ||
+      (/[?#&]repoId=author-p/i.test(h) && /#\/(?:@[^/]+\/)?assets/i.test(h));
+  };
+  if (window.__gbsHooked || !isAssetsView()) return;
   window.__gbsHooked = true;
 
   const MSG = '__GBS__';
@@ -144,3 +151,7 @@
     return origSend.apply(this, arguments);
   };
 })();
+// Keep chrome-extension:// out of stack traces when the host page's own
+// fetch/XHR calls fail (e.g. CSP blocks or network errors on unrelated calls),
+// so Chrome doesn't attribute the page's errors to this extension.
+//# sourceURL=https://experience.adobe.com/__gbs-page-hook.js
