@@ -16,12 +16,14 @@
 
   // All DOM assumptions live here so selector drift is a one-place fix.
   const SELECTORS = {
-    idAttr: 'data-id',
+    idAttrs: ['data-id', 'data-key'],
     idPrefix: 'urn:aaid:aem:',
     thumb: 'img',
+    previewSlot: '[slot="preview"]',
+    overlayThumb: '[data-acv-card-thumb]',
     maxClimb: 8,
   };
-  const ID_SELECTOR = `[${SELECTORS.idAttr}^="${SELECTORS.idPrefix}"]`;
+  const ID_SELECTOR = SELECTORS.idAttrs.map((a) => `[${a}^="${SELECTORS.idPrefix}"]`).join(',');
   const ID_RE = /urn:aaid:aem:[0-9a-f-]{36}/i;
   const BADGE_ATTR = 'data-gbs-badge';
 
@@ -34,7 +36,7 @@
   };
 
   const BADGE_CSS = `
-    :host { all: initial; position: absolute; z-index: 1; pointer-events: auto; }
+    :host { all: initial; position: absolute; z-index: 2147482999; pointer-events: auto; }
     .pill {
       display: inline-flex; align-items: center; gap: 4px;
       font: 700 12px/1 adobe-clean, "Source Sans Pro", -apple-system, system-ui, sans-serif;
@@ -176,17 +178,26 @@
 
   // ---------- card discovery ----------
 
+  function getId(el) {
+    for (const a of SELECTORS.idAttrs) {
+      const m = el.getAttribute(a)?.match(ID_RE);
+      if (m) return m[0];
+    }
+    return null;
+  }
+
   function distinctIdsIn(el, max) {
     const seen = new Set();
     for (const n of el.querySelectorAll(ID_SELECTOR)) {
-      const m = n.getAttribute(SELECTORS.idAttr).match(ID_RE);
-      if (m) seen.add(m[0]);
+      const id = getId(n);
+      if (id) seen.add(id);
       if (seen.size > max) break;
     }
     return seen.size;
   }
 
   const isThumbSized = (img) => img.clientWidth >= 60 && img.clientHeight >= 40;
+  const nativeThumbs = (el) => [...el.querySelectorAll(SELECTORS.thumb)].filter((img) => !img.closest(SELECTORS.overlayThumb));
 
   // Closest ancestor (or self) that holds a thumbnail but no other asset.
   function cardForIdEl(el) {
@@ -194,9 +205,10 @@
     let firstWithImg = null;
     for (let i = 0; i <= SELECTORS.maxClimb && n && n !== document.body; i++, n = n.parentElement) {
       if (distinctIdsIn(n, 1) > 1) break;
-      const imgs = n.querySelectorAll(SELECTORS.thumb);
+      if (n.querySelector(SELECTORS.previewSlot)) return n;
+      const imgs = nativeThumbs(n);
       if (imgs.length && !firstWithImg) firstWithImg = n;
-      if ([...imgs].some(isThumbSized)) return n;
+      if (imgs.some(isThumbSized)) return n;
     }
     return firstWithImg;
   }
@@ -207,10 +219,11 @@
     let n = el;
     let firstWithImg = null;
     for (let i = 0; i <= SELECTORS.maxClimb && n && n !== document.body; i++, n = n.parentElement) {
-      const imgs = n.querySelectorAll(SELECTORS.thumb);
+      if (n.querySelector(SELECTORS.previewSlot)) return n;
+      const imgs = nativeThumbs(n);
       if (imgs.length > 4) break;
       if (imgs.length && !firstWithImg) firstWithImg = n;
-      if ([...imgs].some(isThumbSized)) return n;
+      if (imgs.some(isThumbSized)) return n;
     }
     return firstWithImg;
   }
@@ -218,10 +231,10 @@
   function findCards() {
     const cards = new Map(); // id -> card element
     for (const el of document.querySelectorAll(ID_SELECTOR)) {
-      const m = el.getAttribute(SELECTORS.idAttr).match(ID_RE);
-      if (!m || cards.has(m[0])) continue;
+      const id = getId(el);
+      if (!id || cards.has(id)) continue;
       const card = cardForIdEl(el);
-      if (card) cards.set(m[0], card);
+      if (card) cards.set(id, card);
     }
     // Fallback: match visible file names against the folder listing.
     if (!cards.size && state.byName.size && document.body) {
@@ -237,13 +250,14 @@
   }
 
   function thumbImg(card) {
+    const imgs = nativeThumbs(card);
     let best = null;
     let bestArea = 0;
-    for (const img of card.querySelectorAll(SELECTORS.thumb)) {
+    for (const img of imgs) {
       const area = img.clientWidth * img.clientHeight;
       if (area > bestArea) { best = img; bestArea = area; }
     }
-    return best || card.querySelector(SELECTORS.thumb);
+    return best || imgs[0] || card.querySelector(SELECTORS.thumb);
   }
 
   function rememberThumb(id, img) {
@@ -291,8 +305,9 @@
   }
 
   function thumbAnchor(card) {
-    const anchor = thumbImg(card)?.parentElement || card;
+    const anchor = card.querySelector(SELECTORS.previewSlot) || thumbImg(card)?.parentElement || card;
     if (getComputedStyle(anchor).position === 'static') anchor.style.position = 'relative';
+    anchor.style.isolation = 'isolate';
     return anchor;
   }
 
@@ -359,7 +374,7 @@
 
   function renderBadge(host, id, score) {
     const rec = state.badges.get(host);
-    host.style.cssText = POSITIONS[state.settings.position] || POSITIONS['bottom-right'];
+    host.style.cssText = `${POSITIONS[state.settings.position] || POSITIONS['bottom-right']}z-index:2147482999;`;
     rec.id = id;
     rec.score = score;
     rec.pill.className = `pill ${band(score)}`;
@@ -523,7 +538,7 @@
       if (m.removedNodes.length) { schedule(); return; }
     }
   }).observe(document.documentElement, {
-    childList: true, subtree: true, attributes: true, attributeFilter: [SELECTORS.idAttr],
+    childList: true, subtree: true, attributes: true, attributeFilter: SELECTORS.idAttrs,
   });
 
   // ---------- settings & navigation ----------

@@ -3,9 +3,11 @@
 <head>
   <meta charset="utf-8">
   <title>AEM Grid Brand Score — Options</title>
+  <link rel="icon" href="icons/icon.svg">
   <style>
-    body { font: 14px/1.5 -apple-system, system-ui, sans-serif; margin: 24px; color: #222; max-width: 560px; }
-    h1 { font-size: 18px; margin: 0 0 16px; }
+    body { font: 14px/1.5 -apple-system, system-ui, sans-serif; margin: 20px; color: #222; min-width: 420px; max-width: 560px; }
+    h1 { font-size: 18px; margin: 0 0 16px; display: flex; align-items: center; gap: 8px; }
+    h1 img { width: 24px; height: 24px; }
     h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .05em; color: #6e6e6e; margin: 22px 0 6px; }
     label { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 10px 0; }
     label.radio { justify-content: flex-start; align-items: flex-start; }
@@ -19,7 +21,7 @@
   </style>
 </head>
 <body>
-  <h1>AEM Grid Brand Score</h1>
+  <h1><img src="icons/icon.svg" alt="">AEM Grid Brand Score</h1>
   <label>Show badges <input type="checkbox" id="enabled"></label>
 
   <h2>Colour bands</h2>

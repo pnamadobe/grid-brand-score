@@ -528,5 +528,3 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   );
   return true;
 });
-
-chrome.action.onClicked.addListener(() => chrome.runtime.openOptionsPage());

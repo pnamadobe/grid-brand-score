@@ -49,8 +49,8 @@
     .tbox { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; }
     .tbox img, .tbox canvas { max-width: 100%; max-height: 100%; object-fit: contain; }
     .tbox.none::after { content: 'No preview'; color: #8e8e8e; font-size: 12px; }
-    .rank { position: absolute; top: 8px; left: 8px; background: rgba(255,255,255,.92); color: #222; font-weight: 800; font-size: 12px; padding: 3px 8px; border-radius: 999px; box-shadow: 0 1px 2px rgba(0,0,0,.2); }
-    .pill { position: absolute; bottom: 8px; right: 8px; color: #fff; font-weight: 800; font-size: 12px; padding: 5px 9px; border-radius: 999px; box-shadow: 0 1px 3px rgba(0,0,0,.35); }
+    .rank { position: absolute; top: 8px; left: 8px; z-index: 2; background: rgba(255,255,255,.92); color: #222; font-weight: 800; font-size: 12px; padding: 3px 8px; border-radius: 999px; box-shadow: 0 1px 2px rgba(0,0,0,.2); }
+    .pill { position: absolute; bottom: 8px; right: 8px; z-index: 2; color: #fff; font-weight: 800; font-size: 12px; padding: 5px 9px; border-radius: 999px; box-shadow: 0 1px 3px rgba(0,0,0,.35); }
     .green { background: #0f7d55; } .amber { background: #b35c00; } .red { background: #c9252d; }
     .meta { padding: 10px 12px 12px; display: grid; gap: 6px; }
     .name { font-weight: 700; font-size: 12.5px; word-break: break-all; cursor: pointer; }
